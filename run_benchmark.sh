@@ -1,20 +1,20 @@
 #!/bin/bash
 
-# Konfiguration - Hier kannst du die Standardwerte anpassen
+# Configuration - adjust default values here
 DEFAULT_URL="http://192.168.0.109:1234/v1"
-DEFAULT_KEY="DEIN_API_KEY"
+DEFAULT_KEY="YOUR_API_KEY"
 DEFAULT_ID="1"
 
-# Globbing deaktivieren, damit "1-3" nicht als Pattern expandiert wird
+# Disable globbing so "1-3" is not expanded as a pattern
 set -f
 
-# Flags parsen
+# Parse flags
 URL="$DEFAULT_URL"
 KEY="$DEFAULT_KEY"
 ID="$DEFAULT_ID"
 DRY_RUN=0
 
-# Sammle alle Werte nach --id (unterstützt: einzelnes ID, Range "1-3", oder mehrere IDs)
+# Collect all values after --id (supports: single ID, range "1-3", or multiple IDs)
 ID_VALUES=()
 
 # ── Pre-processing: detect glob-expanded --id ───────────────────────────
@@ -72,9 +72,9 @@ done
 
 echo "Starting benchmark..."
 echo "URL: $URL"
-echo "Key: ${KEY:0:4}******" # Key aus Sicherheitsgründen maskieren
+echo "Key: ${KEY:0:4}******" # Mask key for security reasons
 
-# Prüfe ob ID ein Range-String ist und liste die Einträge auf
+# Check if ID is a range string and list the entries
 DISPLAY_IDS="$ID"
 if [[ "$ID" =~ ^[0-9]+-[0-9]+$ ]]; then
     # Range: "1-3" → "[1 2 3]"
@@ -86,20 +86,20 @@ if [[ "$ID" =~ ^[0-9]+-[0-9]+$ ]]; then
     done
     DISPLAY_IDS="[$(echo $LIST | xargs)]"
 elif [[ "$ID" == *,* ]]; then
-    # Kommagetrennt: "6,8,10" → "[6 8 10]"
+    # Comma-separated: "6,8,10" → "[6 8 10]"
     DISPLAY_IDS="[$(echo "$ID" | tr ',' ' ')]"
 fi
 
 echo "AIME Prompt ID: $DISPLAY_IDS"
-echo "[HINWEIS] Ranges in Anführungszeichen: --id '1-3' | Mehrere IDs: --id 6 8 10"
+echo "[NOTE] Ranges in quotes: --id '1-3' | Multiple IDs: --id 6 8 10"
 
-# Dry-Run: Ausgabe der aufgelösten Argumente und Beendigung
+# Dry-Run: Output resolved arguments and exit
 if [ "$DRY_RUN" -eq 1 ]; then
     echo "PYTHON_ARGS: --url $URL --key $KEY --id $ID"
     exit 0
 fi
 
-# Prüfen ob venv existiert, ansonsten erstellen
+# Check if venv exists, otherwise create it
 if [ ! -d "venv" ]; then
     echo "Creating virtual environment..."
     python3 -m venv venv
@@ -109,12 +109,11 @@ else
     source venv/bin/activate
 fi
 
-# Globbing reaktivieren
-set +f
+# Re-enable globbing
 
-# Benchmark ausführen
+# Run benchmark
 ./venv/bin/python api_benchmark.py --url "$URL" --key "$KEY" --id "$ID"
 
-# venv wieder verlassen
+# Exit venv
 deactivate
 echo "Benchmark finished."
