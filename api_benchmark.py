@@ -88,12 +88,16 @@ def compare_answers(extracted, expected):
 
 
 def format_time(seconds):
-    """Converts seconds to mm:ss format."""
-    if seconds < 0:
-        return "00:00"
+    """Formats seconds into a human-readable duration string (e.g., '4.23s' or '1m 14.16s')."""
+    if seconds is None or seconds < 0:
+        return "0.00s"
+    
+    if seconds < 60:
+        return f"{seconds:.2f}s"
+    
     minutes = int(seconds // 60)
     secs = seconds % 60
-    return f"{minutes:02d}:{secs:05.2f}"
+    return f"{minutes}m {secs:05.2f}s"
 
 
 def print_statistics(results):
