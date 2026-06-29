@@ -43,19 +43,19 @@ def extract_answer(answer_text):
     if not answer_text:
         return None
 
-    # Strategie 1: \\boxed{...}
+    # Strategy 1: \\boxed{...}
     match = re.search(r'\\boxed\{([^}]+)\}', answer_text)
     if match:
         val = match.group(1).strip()
         # If multiple digits, take the last one (AIME answers with 3 digits)
         return val
 
-    # Strategie 2: candidate_answer=N
+    # Strategy 2: candidate_answer=N
     match = re.search(r'candidate_answer\s*=\s*(\d+)', answer_text, re.IGNORECASE)
     if match:
         return match.group(1).strip()
 
-    # Strategie 3: letzte Zahl im gesamten Text
+    # Strategy 3: last number in text
     numbers = re.findall(r'\b(\d{1,4})\b', answer_text)
     if numbers:
         return numbers[-1].strip()
@@ -72,7 +72,7 @@ def compare_answers(extracted, expected):
     if extracted is None:
         return False, "NO ANSWER FOUND"
     
-    # Erwartete Antwort kann int oder str sein
+    # Expected answer can be int or str
     try:
         expected_str = str(int(expected))
     except (ValueError, TypeError):
@@ -117,7 +117,7 @@ def print_statistics(results):
     print("  STATISTICS & RESULT SUMMARY")
     print("="*80)
 
-    # --- Ergebnis-Tabelle ---
+    # --- Result Table ---
     print(f"\n  {'ID':<16} {'Status':<22} {'Expected':>8} {'Received':>8} {'TTFT':>10} {'Latency':>12} {'TPS':>8}")
     print("  " + "-"*78)
 
@@ -189,7 +189,7 @@ def parse_id_selection(id_arg):
     not to the IDs in the JSON data.
     """
     if id_arg is None or id_arg == "":
-        # None means: all
+        return None  # None means: all
 
     id_arg = str(id_arg).strip()
 
@@ -221,7 +221,7 @@ def parse_id_selection(id_arg):
         end = int(range_match.group(2))
         return list(range(start, end + 1))
 
-    # Einzelne Zahl
+    # Single number
     try:
         n = int(id_arg)
         return [n]
