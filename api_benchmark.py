@@ -5,7 +5,7 @@ import argparse
 import re
 from openai import AsyncOpenAI
 
-# AIME System-Prompt und User-Prompt-Suffix (hard-coded)
+# AIME System-Prompt and User-Prompt Suffix (hard-coded)
 SYSTEM_PROMPT = (
     "You are solving AIME problems. The runner scores only visible content "
     "after </think>; it never scores hidden reasoning. Close the reasoning "
@@ -47,7 +47,7 @@ def extract_answer(answer_text):
     match = re.search(r'\\boxed\{([^}]+)\}', answer_text)
     if match:
         val = match.group(1).strip()
-        # Falls mehrere Ziffern, nimm die letzte (AIME antwortet mit 3-stellig)
+        # If multiple digits, take the last one (AIME answers with 3 digits)
         return val
 
     # Strategie 2: candidate_answer=N
@@ -80,7 +80,7 @@ def compare_answers(extracted, expected):
     
     extracted_str = str(extracted).strip()
     
-    # AIME-Antworten sind 000-999
+    # AIME answers are 000-999
     if extracted_str == expected_str:
         return True, "CORRECT"
     else:
@@ -107,7 +107,7 @@ def print_statistics(results):
     successful = [r for r in results if r.get("success")]
     failed = total - len(successful)
 
-    # Timing-Statistiken
+    # Timing statistics
     ttfts = [r["ttft"] for r in successful]
     latencies = [r["total_latency"] for r in successful]
     tps_values = [r["tps"] for r in successful if r.get("tps", 0) > 0]
@@ -189,7 +189,7 @@ def parse_id_selection(id_arg):
     not to the IDs in the JSON data.
     """
     if id_arg is None or id_arg == "":
-        return None  # None bedeutet: alle
+        # None means: all
 
     id_arg = str(id_arg).strip()
 
@@ -421,7 +421,7 @@ async def run_benchmark(url, api_key, id_selection, verbose=False):
             expected_answer = prompt_data.get("answer", "N/A")
 
         print(f"\n=== AIME Prompt ID: {prompt_data['id']} (Position {prompt_index}) ===")
-        print(f"Problem: {problem[:100]}...")  # Erst 100 Zeichen
+        print(f"Problem: {problem[:100]}...")  # First 100 characters
         print(f"Expected answer: {expected_answer}")
         print("="*50)
 
