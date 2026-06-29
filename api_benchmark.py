@@ -230,13 +230,13 @@ def parse_id_selection(id_arg):
     return None  # all
 
 
-async def measure_request_streaming(client, prompt, request_id):
-    """Measures streaming response and separates reasoning_content (Thinking) from content (Answer)."""
+async def measure_request_streaming(client, model_name, prompt, request_id):
+    """Measures streaming response and separates reasoning_content from content."""
     start_time = time.perf_counter()
 
     try:
         response = await client.chat.completions.create(
-            model="facebook/opt-125m",
+            model=model_name, # Dynamisch übergeben!
             messages=[
                 {"role": "system", "content": SYSTEM_PROMPT},
                 {"role": "user", "content": prompt + USER_PROMPT_SUFFIX}
@@ -248,96 +248,105 @@ async def measure_request_streaming(client, prompt, request_id):
 
         thinking_text = ""
         answer_text = ""
-        thinking_token_count = 0
-        answer_token_count = 0
-        ttft_answer = None  # TTFT erst wenn content kommt (nicht reasoning_content)
-        chunk_count = 0
+        thinking_chunks = 0
+        answer_chunks = 0
+        actual_model_name = model_name
+        
         first_token_time = None
-        completion_tokens = None  # Echte Token-Anzahl aus usage (stream_options)
+        first_answer_token_time = None
+        
+        prompt_tokens = 0
+        completion_tokens = 0
 
         async for chunk in response:
-            chunk_count += 1
             if first_token_time is None:
                 first_token_time = time.perf_counter()
 
-            # Rejected response: no choices
+            # Hier den echten Modellnamen auslesen, falls vorhanden
+            if hasattr(chunk, 'model') and chunk.model:
+                actual_model_name = chunk.model
+
+            # Zuerst Usage abfangen, da dieser Chunk oft keine 'choices' hat
+            if hasattr(chunk, 'usage') and chunk.usage:
+                prompt_tokens = getattr(chunk.usage, 'prompt_tokens', 0)
+                if hasattr(chunk.usage, 'completion_tokens'):
+                    completion_tokens = chunk.usage.completion_tokens
+                else:
+                    completion_tokens = getattr(chunk.usage, 'total_tokens', 0) - prompt_tokens
+
+            # Wenn keine Choices da sind (z.B. reiner Usage-Chunk), abbrechen
             if not chunk.choices or len(chunk.choices) == 0:
                 continue
 
             choice = chunk.choices[0]
-
-            # Standard OpenAI Format: content = final answer
-            content = None
-            if hasattr(choice, 'delta') and choice.delta:
-                content = choice.delta.content
-
-            # vLLM: reasoning_content = thought process (Thinking)
+            
+            # vLLM: reasoning_content
             reasoning_content = None
             if hasattr(choice, 'delta') and choice.delta:
                 reasoning_content = getattr(choice.delta, 'reasoning_content', None)
-
-            # collect reasoning_content (Thinking process)
+            
+            # OpenAI Standard: content
+            content = None
+            if hasattr(choice, 'delta') and choice.delta:
+                content = choice.delta.content
+            
             if reasoning_content:
                 thinking_text += reasoning_content
-                thinking_token_count += 1
-
-            # collect content (final answer)
+                thinking_chunks += 1
+            
             if content:
-                if ttft_answer is None:
-                    ttft_answer = time.perf_counter() - start_time
+                if first_answer_token_time is None:
+                    first_answer_token_time = time.perf_counter()
                 answer_text += content
-                answer_token_count += 1
-
-            # vLLM sometimes directly on choice
+                answer_chunks += 1
+            
+            # Fallback für bestimmte vLLM Versionen
             if content is None and hasattr(choice, 'text'):
                 answer_text += choice.text
-                answer_token_count += 1
-
-            # Real token count from usage (stream_options={"include_usage": True})
-            if hasattr(chunk, 'usage') and chunk.usage:
-                completion_tokens = chunk.usage.completion_tokens if hasattr(chunk.usage, 'completion_tokens') else None
-                # fallback: total_tokens - prompt_tokens
-                if completion_tokens is None and hasattr(chunk.usage, 'total_tokens') and hasattr(chunk.usage, 'prompt_tokens'):
-                    completion_tokens = chunk.usage.total_tokens - chunk.usage.prompt_tokens
+                answer_chunks += 1
 
         end_time = time.perf_counter()
 
-        # TTFT: time until first content delta (not reasoning)
-        ttft = ttft_answer if ttft_answer else (first_token_time - start_time)
+        # Zeiten berechnen
+        ttft = (first_token_time - start_time) if first_token_time else 0
         total_latency = end_time - start_time
+        generation_time = end_time - first_token_time if first_token_time else 0
 
-        # TPS based on actual tokens from usage (not chunks!)
-        if completion_tokens is not None and completion_tokens > 0:
-            tps = completion_tokens / (end_time - ttft) if (end_time - ttft) > 0 else 0
+        # TPS korrekt über die gesamte Generierungszeit berechnen
+        if completion_tokens > 0 and generation_time > 0:
+            tps = completion_tokens / generation_time
+        elif (thinking_chunks + answer_chunks) > 0 and generation_time > 0:
+            # Fallback auf Chunks, falls Usage fehlt
+            tps = (thinking_chunks + answer_chunks) / generation_time
         else:
-            # Fallback: Chunks as rough estimate (inaccurate!)
-            tps = answer_token_count / (end_time - ttft) if (end_time - ttft) > 0 else 0
+            tps = 0
 
-        print(f"  [INFO] Streaming: {chunk_count} Chunks, Thinking={thinking_token_count} Tokens, Answer={answer_token_count} Chars, CompletionTokens={completion_tokens}, TPS={tps:.2f}")
+        print(f"  [INFO] Streaming: {thinking_chunks + answer_chunks} Chunks, Tokens={completion_tokens}, TPS={tps:.2f}, TTFT={ttft:.2f}s")
 
         return {
             "id": request_id,
             "ttft": ttft,
             "total_latency": total_latency,
             "tps": tps,
-            "tokens": completion_tokens if completion_tokens is not None else answer_token_count,
+            "tokens": completion_tokens,
             "success": True,
             "thinking": thinking_text,
             "answer": answer_text,
-            "streaming": True
+            "streaming": True,
+            "model": actual_model_name
         }
     except Exception as e:
         print(f"  [DEBUG] Streaming request failed: {e}")
         return {"id": request_id, "success": False, "streaming": True}
 
 
-async def measure_request_non_streaming(client, prompt, request_id):
+async def measure_request_non_streaming(client, model_name, prompt, request_id):
         # Non-Streaming fallback: gets complete response at once.
     start_time = time.perf_counter()
 
     try:
         response = await client.chat.completions.create(
-            model="facebook/opt-125m",
+            model=model_name,
             messages=[{"role": "user", "content": prompt}],
             max_tokens=4096,
             stream=False
@@ -360,28 +369,38 @@ async def measure_request_non_streaming(client, prompt, request_id):
             "tokens": total_tokens,
             "success": True,
             "answer": full_text,
-            "streaming": False
+            "streaming": False,
+            "model": response.model if hasattr(response, 'model') else model_name
         }
     except Exception as e:
         print(f"  [DEBUG] Non-streaming request failed: {e}")
         return {"id": request_id, "success": False, "streaming": False}
 
 
-async def measure_request(client, prompt, request_id):
+async def measure_request(client, model_name, prompt, request_id):
     """Tries streaming first, fallback to non-streaming."""
     # 1. Try streaming
-    result = await measure_request_streaming(client, prompt, request_id)
+    result = await measure_request_streaming(client, model_name, prompt, request_id)
 
     # 2. If streaming provided no content, use non-streaming
     if result.get("success") and (not result.get("answer") or result.get("tokens", 0) == 0):
         print(f"  [INFO] Streaming provided no content deltas, trying non-streaming...")
-        result = await measure_request_non_streaming(client, prompt, request_id)
+        result = await measure_request_non_streaming(client, model_name, prompt, request_id)
 
     return result
 
 
 async def run_benchmark(url, api_key, id_selection, verbose=False):
     client = AsyncOpenAI(base_url=url, api_key=api_key)
+
+    # Get model name from API if not provided or to verify
+    try:
+        models = await client.models.list()
+        model_name = models.data[0].id
+        print(f"[INFO] Detected model from API: {model_name}")
+    except Exception as e:
+        print(f"[WARN] Could not detect model from API, using default or fallback: {e}")
+        model_name = "facebook/opt-125m" # Fallback
 
     # Prompts load
     prompts = load_prompts(PROMPTS_FILE)
@@ -427,7 +446,7 @@ async def run_benchmark(url, api_key, id_selection, verbose=False):
 
         # Benchmark execution
         print(f"\nRunning benchmark for position {prompt_index}...")
-        result = await measure_request(client, problem, prompt_data["id"])
+        result = await measure_request(client, model_name, problem, prompt_data["id"])
 
         results.append({
             **result,
