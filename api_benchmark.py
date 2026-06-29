@@ -193,7 +193,7 @@ def parse_id_selection(id_arg):
 
     id_arg = str(id_arg).strip()
 
-    # Kommagetrennte IDs prüfen: "6,8,10"
+    # Check comma-separated IDs: "6,8,10"
     if ',' in id_arg:
         parts = id_arg.split(',')
         result = []
@@ -201,7 +201,7 @@ def parse_id_selection(id_arg):
             part = part.strip()
             if not part:
                 continue
-            # Auch Sub-Ranges in kommagetrennter Liste erlauben: "1-3,5,7-9"
+            # Also allow sub-ranges in comma-separated list: "1-3,5,7-9"
             sub_match = re.match(r'^(\d+)-(\d+)$', part)
             if sub_match:
                 start = int(sub_match.group(1))
@@ -214,7 +214,7 @@ def parse_id_selection(id_arg):
                     print(f"[WARN] Invalid ID '{part}' – ignoring.")
         return result if result else None
 
-    # Range prüfen: "N-M"
+    # Check range: "N-M"
     range_match = re.match(r'^(\d+)-(\d+)$', id_arg)
     if range_match:
         start = int(range_match.group(1))
@@ -227,7 +227,7 @@ def parse_id_selection(id_arg):
         return [n]
     except ValueError:
         print(f"[WARN] Invalid ID '{id_arg}' – ignoring.")
-    return None  # alle
+    return None  # all
 
 
 async def measure_request_streaming(client, prompt, request_id):
@@ -302,11 +302,11 @@ async def measure_request_streaming(client, prompt, request_id):
 
         end_time = time.perf_counter()
 
-        # TTFT: Zeit bis zum ersten Content-Delta (nicht Reasoning)
+        # TTFT: time until first content delta (not reasoning)
         ttft = ttft_answer if ttft_answer else (first_token_time - start_time)
         total_latency = end_time - start_time
 
-        # TPS basierend auf echten Tokens aus usage (nicht Chunks!)
+        # TPS based on actual tokens from usage (not chunks!)
         if completion_tokens is not None and completion_tokens > 0:
             tps = completion_tokens / (end_time - ttft) if (end_time - ttft) > 0 else 0
         else:
@@ -332,7 +332,7 @@ async def measure_request_streaming(client, prompt, request_id):
 
 
 async def measure_request_non_streaming(client, prompt, request_id):
-    """Non-Streaming fallback: gets complete response at once."""
+        # Non-Streaming fallback: gets complete response at once.
     start_time = time.perf_counter()
 
     try:
@@ -348,7 +348,7 @@ async def measure_request_non_streaming(client, prompt, request_id):
         full_text = response.choices[0].message.content or ""
         total_tokens = response.usage.total_tokens if response.usage else 0
 
-        ttft = end_time - start_time  # Kein TTFT ohne Streaming
+        ttft = end_time - start_time  # No TTFT without streaming
 
         print(f"  [DEBUG] Non-Streaming: response length={len(full_text)} chars, tokens={total_tokens}")
 
@@ -441,7 +441,7 @@ async def run_benchmark(url, api_key, id_selection, verbose=False):
             print(f"\n--- Full Response ---")
             print(result["answer"][:1000] + "..." if len(result.get("answer", "")) > 1000 else result.get("answer", ""))
 
-    # Statistik für alle Ergebnisse
+    # Statistics for all results
     print_statistics(results)
 
 
