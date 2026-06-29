@@ -1,7 +1,8 @@
 import sys
 from io import StringIO
+from pathlib import Path
 
-sys.path.insert(0, "/Users/thtesche/VibeCoding/llm-inference-bench")
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from api_benchmark import parse_id_selection
 
