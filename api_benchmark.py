@@ -25,7 +25,7 @@ USER_PROMPT_SUFFIX = (
 
 
 def parse_answer_from_boxed(answer_text):
-    """Extrahiert den Wert aus \\boxed{...} aus der Antwort."""
+    """Extracts the value from \\boxed{...} from the answer."""
     match = re.search(r'\\boxed\{([^}]+)\}', answer_text)
     if match:
         return match.group(1).strip()
@@ -33,12 +33,12 @@ def parse_answer_from_boxed(answer_text):
 
 
 def extract_answer(answer_text):
-    """Extrahiert die finale Antwort aus der LLM-Antwort.
+    """Extracts the final answer from the LLM response.
     
-    Versucht mehrere Strategien:
-    1. \\boxed{...} - die offizielle AIME-Formatierung
-    2. candidate_answer=N - explizite Antwort-Zeile
-    3. Letzte Zahl im Text (Fallback)
+    Tries several strategies:
+    1. \\boxed{...} - the official AIME formatting
+    2. candidate_answer=N - explicit answer line
+    3. Last number in text (fallback)
     """
     if not answer_text:
         return None
@@ -64,13 +64,13 @@ def extract_answer(answer_text):
 
 
 def compare_answers(extracted, expected):
-    """Vergleicht extrahierte mit erwarteter Antwort.
+    """Compares extracted with expected answer.
     
     Returns:
         tuple: (bool matched, str status)
     """
     if extracted is None:
-        return False, "KEINE ANTWORT GEFUNDEN"
+        return False, "NO ANSWER FOUND"
     
     # Erwartete Antwort kann int oder str sein
     try:
@@ -82,13 +82,13 @@ def compare_answers(extracted, expected):
     
     # AIME-Antworten sind 000-999
     if extracted_str == expected_str:
-        return True, "RICHTIG"
+        return True, "CORRECT"
     else:
-        return False, f"FALSCH (erwartet={expected_str}, erhalten={extracted_str})"
+        return False, f"WRONG (expected={expected_str}, received={extracted_str})"
 
 
 def format_time(seconds):
-    """Konvertiert Sekunden in mm:ss Format."""
+    """Converts seconds to mm:ss format."""
     if seconds < 0:
         return "00:00"
     minutes = int(seconds // 60)
@@ -97,9 +97,9 @@ def format_time(seconds):
 
 
 def print_statistics(results):
-    """Gibt eine Statistik-Tabelle für alle durchgeführten Benchmarks aus."""
+    """Outputs a statistics table for all performed benchmarks."""
     if not results:
-        print("\n[STATS] Keine Ergebnisse vorhanden.")
+        print("\n[STATS] No results found.")
         return
 
     correct = 0
@@ -114,17 +114,17 @@ def print_statistics(results):
 
     print("\n" + "="*80)
     print("="*80)
-    print("  STATISTIK & ERGEBNIS-ZUSAMMENFASSUNG")
+    print("  STATISTICS & RESULT SUMMARY")
     print("="*80)
 
     # --- Ergebnis-Tabelle ---
-    print(f"\n  {'ID':<16} {'Status':<22} {'Erwartet':>8} {'Erhalten':>8} {'TTFT':>10} {'Latency':>12} {'TPS':>8}")
+    print(f"\n  {'ID':<16} {'Status':<22} {'Expected':>8} {'Received':>8} {'TTFT':>10} {'Latency':>12} {'TPS':>8}")
     print("  " + "-"*78)
 
     for r in results:
         rid = r.get("id", "?")
         if not r.get("success"):
-            print(f"  {rid:<16} {'FEHLGESCHLAGEN':<22} {'':>8} {'':>8} {'':>10} {'':>12} {'':>8}")
+            print(f"  {rid:<16} {'FAILED':<22} {'':>8} {'':>8} {'':>10} {'':>12} {'':>8}")
             continue
 
         extracted = extract_answer(r.get("answer", ""))
@@ -140,12 +140,12 @@ def print_statistics(results):
 
         print(f"  {rid:<16} {status_str:<22} {str(r.get('expected_answer','')):>8} {str(extracted or '???'):>8} {ttft_str:>10} {lat_str:>12} {tps_str:>8}")
 
-    # --- Zusammenfassung ---
+    # --- Summary ---
     print("\n  " + "-"*78)
-    print(f"  Gesamt:  {total} Aufgaben | {len(successful)} erfolgreich | {failed} fehlgeschlagen")
-    print(f"  Richtig: {correct}/{len(successful)} ({len(successful)>0 and correct/len(successful)*100:.1f}%)")
-    print(f"  Falsch:  {len(successful)-correct}/{len(successful)}")
-    print(f"  Keine Antwort: {sum(1 for r in successful if extract_answer(r.get('answer','')) is None)}")
+    print(f"  Total:  {total} tasks | {len(successful)} successful | {failed} failed")
+    print(f"  Correct: {correct}/{len(successful)} ({len(successful)>0 and correct/len(successful)*100:.1f}%)")
+    print(f"  Wrong:  {len(successful)-correct}/{len(successful)}")
+    print(f"  No answer: {sum(1 for r in successful if extract_answer(r.get('answer','')) is None)}")
     print()
 
     if ttfts:
@@ -157,18 +157,18 @@ def print_statistics(results):
     print("="*80)
     print("="*80)
 
-# Pfad zur AIME prompts Datei
+# Path to the AIME prompts file
 PROMPTS_FILE = "prompts/aime_2026.jsonl"
 
-# DEBUG: Setze auf True um "Hello" als Prompt zu testen
+# DEBUG: Set to True to test with "Hello" as prompt
 DEBUG_HELLO = False
 
-# VERBOSE: Setze auf True um Thinking-Prozess und vollständige Antwort auszugeben
+# VERBOSE: Set to True to output thinking process and full response
 VERBOSE = False
 
 
 def load_prompts(filepath):
-    """Lädt alle Prompts aus der JSONL-Datei."""
+    """Loads all prompts from the JSONL file."""
     prompts = []
     with open(filepath, "r") as f:
         for line in f:
@@ -177,16 +177,16 @@ def load_prompts(filepath):
 
 
 def parse_id_selection(id_arg):
-    """Parst die --id Argument-Option und gibt eine Liste von 1-basierten Indexen zurück.
+    """Parses the --id argument option and returns a list of 1-based indices.
 
-    Optionen:
-      None        → alle Einträge (leere Liste = alle)
-      int N       → der N-te Eintrag (1-basiert)
-      str "N-M"   → Einträge von N bis M (1-basiert, inklusiv)
-      str "N,P,Q" → mehrere einzelne Einträge (kommagetrennt, z.B. "6,8,10")
+    Options:
+      None        → all entries (empty list = all)
+      int N       → the N-th entry (1-based)
+      str "N-M"   → entries from N to M (1-based, inclusive)
+      str "N,P,Q" → multiple individual entries (comma-separated, e.g., "6,8,10")
 
-    Die Indexe beziehen sich auf die Reihenfolge im JSONL-File,
-    nicht auf die IDs in den JSON-Daten.
+    The indices refer to the order in the JSONL file,
+    not to the IDs in the JSON data.
     """
     if id_arg is None or id_arg == "":
         return None  # None bedeutet: alle
@@ -211,7 +211,7 @@ def parse_id_selection(id_arg):
                 try:
                     result.append(int(part))
                 except ValueError:
-                    print(f"[WARN] Ungültige ID '{part}' – ignoriere.")
+                    print(f"[WARN] Invalid ID '{part}' – ignoring.")
         return result if result else None
 
     # Range prüfen: "N-M"
@@ -226,12 +226,12 @@ def parse_id_selection(id_arg):
         n = int(id_arg)
         return [n]
     except ValueError:
-        print(f"[WARN] Ungültige ID '{id_arg}' – ignoriere.")
-        return None  # alle
+        print(f"[WARN] Invalid ID '{id_arg}' – ignoring.")
+    return None  # alle
 
 
 async def measure_request_streaming(client, prompt, request_id):
-    """Misst Streaming-Antwort und trennt reasoning_content (Thinking) von content (Antwort)."""
+    """Measures streaming response and separates reasoning_content (Thinking) from content (Answer)."""
     start_time = time.perf_counter()
 
     try:
@@ -260,40 +260,40 @@ async def measure_request_streaming(client, prompt, request_id):
             if first_token_time is None:
                 first_token_time = time.perf_counter()
 
-            # Abgelehnte Antwort: keine choices
+            # Rejected response: no choices
             if not chunk.choices or len(chunk.choices) == 0:
                 continue
 
             choice = chunk.choices[0]
 
-            # Standard OpenAI Format: content = finale Antwort
+            # Standard OpenAI Format: content = final answer
             content = None
             if hasattr(choice, 'delta') and choice.delta:
                 content = choice.delta.content
 
-            # vLLM: reasoning_content = Gedankengang (Thinking)
+            # vLLM: reasoning_content = thought process (Thinking)
             reasoning_content = None
             if hasattr(choice, 'delta') and choice.delta:
                 reasoning_content = getattr(choice.delta, 'reasoning_content', None)
 
-            # reasoning_content sammeln (Thinking-Prozess)
+            # collect reasoning_content (Thinking process)
             if reasoning_content:
                 thinking_text += reasoning_content
                 thinking_token_count += 1
 
-            # content sammeln (finale Antwort)
+            # collect content (final answer)
             if content:
                 if ttft_answer is None:
                     ttft_answer = time.perf_counter() - start_time
                 answer_text += content
                 answer_token_count += 1
 
-            # vLLM manchmal direkt auf choice
+            # vLLM sometimes directly on choice
             if content is None and hasattr(choice, 'text'):
                 answer_text += choice.text
                 answer_token_count += 1
 
-            # Echte Token-Anzahl aus usage (stream_options={"include_usage": True})
+            # Real token count from usage (stream_options={"include_usage": True})
             if hasattr(chunk, 'usage') and chunk.usage:
                 completion_tokens = chunk.usage.completion_tokens if hasattr(chunk.usage, 'completion_tokens') else None
                 # fallback: total_tokens - prompt_tokens
@@ -310,7 +310,7 @@ async def measure_request_streaming(client, prompt, request_id):
         if completion_tokens is not None and completion_tokens > 0:
             tps = completion_tokens / (end_time - ttft) if (end_time - ttft) > 0 else 0
         else:
-            # Fallback: Chunks als grobe Schätzung (ungenau!)
+            # Fallback: Chunks as rough estimate (inaccurate!)
             tps = answer_token_count / (end_time - ttft) if (end_time - ttft) > 0 else 0
 
         print(f"  [INFO] Streaming: {chunk_count} Chunks, Thinking={thinking_token_count} Tokens, Answer={answer_token_count} Chars, CompletionTokens={completion_tokens}, TPS={tps:.2f}")
@@ -332,7 +332,7 @@ async def measure_request_streaming(client, prompt, request_id):
 
 
 async def measure_request_non_streaming(client, prompt, request_id):
-    """Non-Streaming fallback: holt komplette Antwort auf einmal."""
+    """Non-Streaming fallback: gets complete response at once."""
     start_time = time.perf_counter()
 
     try:
@@ -350,7 +350,7 @@ async def measure_request_non_streaming(client, prompt, request_id):
 
         ttft = end_time - start_time  # Kein TTFT ohne Streaming
 
-        print(f"  [DEBUG] Non-Streaming: Antwortlänge={len(full_text)} chars, tokens={total_tokens}")
+        print(f"  [DEBUG] Non-Streaming: response length={len(full_text)} chars, tokens={total_tokens}")
 
         return {
             "id": request_id,
@@ -368,13 +368,13 @@ async def measure_request_non_streaming(client, prompt, request_id):
 
 
 async def measure_request(client, prompt, request_id):
-    """Versucht zuerst Streaming, fallback auf Non-Streaming."""
-    # 1. Streaming versuchen
+    """Tries streaming first, fallback to non-streaming."""
+    # 1. Try streaming
     result = await measure_request_streaming(client, prompt, request_id)
 
-    # 2. Wenn Streaming keine Content geliefert hat, Non-Streaming
+    # 2. If streaming provided no content, use non-streaming
     if result.get("success") and (not result.get("answer") or result.get("tokens", 0) == 0):
-        print(f"  [INFO] Streaming lieferte keine Content-Deltas, versuche Non-Streaming...")
+        print(f"  [INFO] Streaming provided no content deltas, trying non-streaming...")
         result = await measure_request_non_streaming(client, prompt, request_id)
 
     return result
@@ -383,36 +383,36 @@ async def measure_request(client, prompt, request_id):
 async def run_benchmark(url, api_key, id_selection, verbose=False):
     client = AsyncOpenAI(base_url=url, api_key=api_key)
 
-    # Prompts laden
+    # Prompts load
     prompts = load_prompts(PROMPTS_FILE)
-    print(f"Geladene {len(prompts)} Prompts aus {PROMPTS_FILE}")
+    print(f"Loaded {len(prompts)} prompts from {PROMPTS_FILE}")
 
-    # Auswahl parsen: None = alle, [N] = einzelner Eintrag, [N, ..., M] = Range
+    # Parse selection: None = all, [N] = single entry, [N, ..., M] = range
     indices = parse_id_selection(id_selection)
 
     if indices is None:
-        # Alle Einträge durchlaufen
+        # Iterate through all entries
         selected = prompts
-        print(f"[INFO] Keine ID angegeben – führe Benchmark für alle {len(selected)} Prompts aus.")
+        print(f"[INFO] No ID specified – running benchmark for all {len(selected)} prompts.")
     else:
-        # Nach Position im JSONL filtern (1-basiert)
+        # Filter by position in JSONL (1-based)
         selected = []
         for idx in indices:
-            pos = idx - 1  # 1-basiert → 0-basiert
+            pos = idx - 1  # 1-based → 0-based
             if 0 <= pos < len(prompts):
                 selected.append(prompts[pos])
             else:
-                print(f"[WARN] Position {idx} außerhalb des Bereichs (1-{len(prompts)}) – übersprungen.")
+                print(f"[WARN] Position {idx} out of range (1-{len(prompts)}) – skipped.")
         if not selected:
-            print(f"Keine gültigen Prompts für die angegebene(n) ID(s).")
+            print(f"No valid prompts for the specified ID(s).")
             return
-        print(f"[INFO] Führe Benchmark für {len(selected)} ausgewählte Prompts aus.")
+        print(f"[INFO] Running benchmark for {len(selected)} selected prompts.")
 
     results = []
     for i, prompt_data in enumerate(selected):
         prompt_index = indices[i] if indices else (i + 1)
 
-        # DEBUG: "Hello" als Test-Prompt
+        # DEBUG: "Hello" as test prompt
         if DEBUG_HELLO:
             problem = "According to Douglas Adams' The Hitchhiker's Guide to the Galaxy, what is the ultimate answer to the ultimate question of life, the universe, and everything? Provide just the number."
             expected_answer = "42"
@@ -422,11 +422,11 @@ async def run_benchmark(url, api_key, id_selection, verbose=False):
 
         print(f"\n=== AIME Prompt ID: {prompt_data['id']} (Position {prompt_index}) ===")
         print(f"Problem: {problem[:100]}...")  # Erst 100 Zeichen
-        print(f"Erwartete Antwort: {expected_answer}")
+        print(f"Expected answer: {expected_answer}")
         print("="*50)
 
-        # Benchmark ausführen
-        print(f"\nFühre Benchmark für Position {prompt_index} aus...")
+        # Benchmark execution
+        print(f"\nRunning benchmark for position {prompt_index}...")
         result = await measure_request(client, problem, prompt_data["id"])
 
         results.append({
@@ -434,11 +434,11 @@ async def run_benchmark(url, api_key, id_selection, verbose=False):
             "expected_answer": expected_answer
         })
 
-        # Detail-Ausgabe (nur im VERBOSE-Modus: Thinking + vollständige Antwort)
+        # Detail output (only in VERBOSE mode: Thinking + full response)
         if verbose and result["success"] and result.get("streaming") and result.get("thinking"):
-            print(f"\n--- Thinking-Prozess ---")
+            print(f"\n--- Thinking Process ---")
             print(result["thinking"][:500] + "..." if len(result["thinking"]) > 500 else result["thinking"])
-            print(f"\n--- Vollständige Antwort ---")
+            print(f"\n--- Full Response ---")
             print(result["answer"][:1000] + "..." if len(result.get("answer", "")) > 1000 else result.get("answer", ""))
 
     # Statistik für alle Ergebnisse
@@ -449,8 +449,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--url", type=str, required=True, help="URL of the vLLM server (e.g. http://192.168.0.109:1234/v1)")
     parser.add_argument("--key", type=str, required=True, help="API Key")
-    parser.add_argument("--id", type=str, default=None, help="Position im JSONL (1-basiert): einzelne Zahl z.B. '5' oder Range z.B. '3-7'. Ohne Angabe: alle Prompts.")
-    parser.add_argument("--verbose", action="store_true", default=VERBOSE, help="Gibt Thinking-Prozess und vollständige Antwort aus")
+    parser.add_argument("--id", type=str, default=None, help="Position in JSONL (1-based): single number e.g. '5' or range e.g. '3-7'. If omitted: all prompts.")
+    parser.add_argument("--verbose", action="store_true", default=VERBOSE, help="Outputs thinking process and full response")
     args = parser.parse_args()
 
     asyncio.run(run_benchmark(args.url, args.key, args.id, verbose=args.verbose))

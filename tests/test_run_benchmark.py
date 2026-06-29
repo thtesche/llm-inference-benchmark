@@ -44,7 +44,7 @@ class TestRunBenchmarkDefaults:
 
     def test_key_masked_in_output(self):
         r = _run([])
-        assert "DEIN" in r.stdout  # Key wird maskiert ausgegeben
+        assert "YOUR******" in r.stdout  # Key wird maskiert ausgegeben
 
 
 class TestRunBenchmarkURL:
