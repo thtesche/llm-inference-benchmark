@@ -3,8 +3,10 @@ import time
 import asyncio
 import argparse
 import re
+import httpx
 from openai import AsyncOpenAI
 
+# AIME System-Prompt and User-Prompt Suffix
 SYSTEM_PROMPT = (
     "You are solving AIME problems. The runner scores only visible content "
     "after </think>; it never scores hidden reasoning. Close the reasoning "
@@ -32,7 +34,7 @@ def parse_answer_from_boxed(answer_text):
 
 
 def extract_answer(answer_text):
-    """Extracts the final answer from the LLM response."""
+    """Extracts the final answer from the LLM response using fallback strategies."""
     if not answer_text:
         return None
 
@@ -57,7 +59,7 @@ def extract_answer(answer_text):
 def compare_answers(extracted, expected):
     """Compares the extracted answer with the expected answer."""
     if extracted is None:
-        return False, "NO ANSWER FOUND"
+        return False, "WRONG"
     
     try:
         expected_str = str(int(expected))
@@ -69,7 +71,7 @@ def compare_answers(extracted, expected):
     if extracted_str == expected_str:
         return True, "CORRECT"
     else:
-        return False, f"WRONG (expected={expected_str}, received={extracted_str})"
+        return False, "WRONG"
 
 
 def format_time(seconds):
@@ -94,43 +96,63 @@ def print_statistics(results):
     successful = [r for r in results if r.get("success")]
     failed = total - len(successful)
 
-    # Aggregate metrics
-    ttfts = [r["ttft"] for r in successful]
-    latencies = [r["total_latency"] for r in successful]
-    tps_values = [r["tps"] for r in successful if r.get("tps", 0) > 0]
-    think_times = [r["reasoning_time"] for r in successful]
-    answer_times = [r["answer_time"] for r in successful]
-    ratios = [r["thinking_ratio"] for r in successful]
+    # Aggregate metrics from ALL benchmarks (including failed ones if they have metrics)
+    ttfts = [r["ttft"] for r in results if "ttft" in r]
+    latencies = [r["total_latency"] for r in results if "total_latency" in r]
+    tps_values = [r["tps"] for r in results if r.get("tps", 0) > 0]
+    think_times = [r["reasoning_time"] for r in results if "reasoning_time" in r]
+    answer_times = [r["answer_time"] for r in results if "answer_time" in r]
+    ratios = [r["thinking_ratio"] for r in results if "thinking_ratio" in r]
 
     print("\n" + "="*95)
     print("="*95)
     print("  ADVANCED STATISTICS & PERFORMANCE SUMMARY")
     print("="*95)
 
-    # --- Result Table ---
-    print(f"\n  {'ID':<14} {'Status':<10} {'Exp':>5} {'Rec':>5} {'TTFT':>10} {'Think-Time':>12} {'Answer-Time':>13} {'Latency':>12} {'TPS':>7}")
+    # Unified layout template for perfect vertical column alignment
+    ROW_FMT = "  {id:<14} {status:<10} {exp:>5} {rec:>5} {ttft:>10} {think:>12} {answer:>13} {latency:>12} {tps:>7}"
+
+    # --- Table Header ---
+    print(ROW_FMT.format(
+        id="ID", status="Status", exp="Exp", rec="Rec",
+        ttft="TTFT", think="Think-Time", answer="Answer-Time",
+        latency="Latency", tps="TPS"
+    ))
     print("  " + "-"*91)
 
+    # --- Table Rows ---
     for r in results:
         rid = r.get("id", "?")
-        if not r.get("success"):
-            print(f"  {rid:<14} {'FAILED':<10} {'':>5} {'':>5} {'':>10} {'':>12} {'':>13} {'':>12} {'':>7}")
-            continue
-
         extracted = extract_answer(r.get("answer", ""))
-        matched, status = compare_answers(extracted, r.get("expected_answer", "N/A"))
+        
+        if r.get("success"):
+            matched, status = compare_answers(extracted, r.get("expected_answer", "N/A"))
+            if matched:
+                correct += 1
+            rec_val = str(extracted or '???')[:5]
+        else:
+            status = "FAILED"
+            rec_val = "---"
 
-        if matched:
-            correct += 1
+        print(ROW_FMT.format(
+            id=rid,
+            status=status,
+            exp=str(r.get('expected_answer', '')),
+            rec=rec_val,
+            ttft=format_time(r.get('ttft', 0)),
+            think=format_time(r.get('reasoning_time', 0)),
+            answer=format_time(r.get('answer_time', 0)),
+            latency=format_time(r.get('total_latency', 0)),
+            tps=f"{r.get('tps', 0):.1f}" if r.get('tps', 0) > 0 else "0.0"
+        ))
 
-        print(f"  {rid:<14} {status[:10]:<10} {str(r.get('expected_answer','')):>5} {str(extracted or '???')[:5]:>5} "
-              f"{format_time(r['ttft']):>10} {format_time(r['reasoning_time']):>12} {format_time(r['answer_time']):>13} "
-              f"{format_time(r['total_latency']):>12} {r['tps']:>7.1f}")
-
-    # --- Summary ---
+    # --- Summary Section ---
     print("\n  " + "-"*91)
     print(f"  Total:  {total} tasks | {len(successful)} successful | {failed} failed")
-    print(f"  Correct: {correct}/{len(successful)} ({len(successful)>0 and correct/len(successful)*100:.1f}%)")
+    if len(successful) > 0:
+        print(f"  Correct: {correct}/{len(successful)} ({correct/len(successful)*100:.1f}%)")
+    else:
+        print(f"  Correct: 0/0 (0.0%)")
     print()
 
     if ttfts:
@@ -141,11 +163,21 @@ def print_statistics(results):
         print(f"  Answer-Ph.   - Min: {format_time(min(answer_times)):<9} | Max: {format_time(max(answer_times)):<9} | Avg: {format_time(sum(answer_times)/len(answer_times))}")
     if latencies:
         print(f"  Full Latency - Min: {format_time(min(latencies)):<9} | Max: {format_time(max(latencies)):<9} | Avg: {format_time(sum(latencies)/len(latencies))}")
+    
     if ratios:
-        print(f"  Think-Ratio  - Min: {min(ratios):.1f}%     | Max: {max(ratios):.1f}%     | Avg: {sum(ratios)/len(ratios):.1f}% (Time share of thinking phase)")
+        min_rat = f"{min(ratios):.1f}%"
+        max_rat = f"{max(ratios):.1f}%"
+        avg_rat = f"{sum(ratios)/len(ratios):.1f}%"
+        print(f"  Think-Ratio  - Min: {min_rat:<9} | Max: {max_rat:<9} | Avg: {avg_rat}")
+        
     if tps_values:
-        print(f"  Total TPS    - Min: {min(tps_values):.1f}       | Max: {max(tps_values):.1f}       | Avg: {sum(tps_values)/len(tps_values):.1f}")
+        min_tps = f"{min(tps_values):.1f}"
+        max_tps = f"{max(tps_values):.1f}"
+        avg_tps = f"{sum(tps_values)/len(tps_values):.1f}"
+        print(f"  Total TPS    - Min: {min_tps:<9} | Max: {max_tps:<9} | Avg: {avg_tps}")
+        
     print("="*95)
+    print("Benchmark finished.")
 
 
 PROMPTS_FILE = "prompts/aime_2026.jsonl"
@@ -203,7 +235,18 @@ async def measure_request_streaming(client, model_name, prompt, request_id):
     """Measures streaming response and separates thinking from answering performance."""
     start_time = time.perf_counter()
 
+    # Define all tracking parameters upfront to safeguard against mid-stream exceptions
+    thinking_text = ""
+    answer_text = ""
+    accumulated_content = ""
+    first_token_time = None          
+    first_answer_token_time = None   
+    has_native_reasoning = False     
+    chunk_count = 0
+
     try:
+        custom_timeout = httpx.Timeout(120.0, read=15.0)
+
         response = await client.chat.completions.create(
             model=model_name,
             messages=[
@@ -212,26 +255,11 @@ async def measure_request_streaming(client, model_name, prompt, request_id):
             ],
             max_tokens=32768,
             stream=True,
-            stream_options={"include_usage": True}
+            timeout=custom_timeout
         )
 
-        thinking_text = ""
-        answer_text = ""
-        
-        first_token_time = None          # Time of the very first token (TTFT relevant)
-        first_answer_token_time = None   # Time when the model switches to the final content answer
-        
-        prompt_tokens = 0
-        completion_tokens = 0
-
         async for chunk in response:
-            # Bugfix A: Extract usage data first, as this chunk at the end contains NO choices array!
-            if hasattr(chunk, 'usage') and chunk.usage:
-                prompt_tokens = getattr(chunk.usage, 'prompt_tokens', 0)
-                if hasattr(chunk.usage, 'completion_tokens'):
-                    completion_tokens = chunk.usage.completion_tokens
-                else:
-                    completion_tokens = getattr(chunk.usage, 'total_tokens', 0) - prompt_tokens
+            chunk_count += 1
 
             if not chunk.choices or len(chunk.choices) == 0:
                 continue
@@ -241,54 +269,57 @@ async def measure_request_streaming(client, model_name, prompt, request_id):
 
             choice = chunk.choices[0]
             
-            # Extract reasoning content (vLLM / Ollama standard)
             reasoning_content = None
             if hasattr(choice, 'delta') and choice.delta:
                 reasoning_content = getattr(choice.delta, 'reasoning_content', None)
 
-            # Extract standard response content
             content = None
             if hasattr(choice, 'delta') and choice.delta:
                 content = choice.delta.content
+            if content is None and hasattr(choice, 'text'):
+                content = choice.text
 
             if reasoning_content:
+                has_native_reasoning = True
                 thinking_text += reasoning_content
 
             if content:
-                if first_answer_token_time is None:
-                    # Captures the exact moment the thinking phase ends and final generation begins
-                    first_answer_token_time = time.perf_counter()
-                answer_text += content
-
-            if content is None and hasattr(choice, 'text'):
-                if first_answer_token_time is None:
-                    first_answer_token_time = time.perf_counter()
-                answer_text += choice.text
+                if has_native_reasoning:
+                    if first_answer_token_time is None:
+                        first_answer_token_time = time.perf_counter()
+                    answer_text += content
+                else:
+                    accumulated_content += content
+                    if "</think>" in accumulated_content and first_answer_token_time is None:
+                        first_answer_token_time = time.perf_counter()
 
         end_time = time.perf_counter()
 
-        # --- Detailed Timing Metrics ---
+        if not has_native_reasoning:
+            if "<think>" in accumulated_content and "</think>" in accumulated_content:
+                parts = accumulated_content.split("</think>", 1)
+                thinking_text = parts[0].replace("<think>", "").strip()
+                answer_text = parts[1].strip()
+            elif "</think>" in accumulated_content:
+                parts = accumulated_content.split("</think>", 1)
+                thinking_text = parts[0].strip()
+                answer_text = parts[1].strip()
+            else:
+                thinking_text = ""
+                answer_text = accumulated_content
+
         ttft = (first_token_time - start_time) if first_token_time else (end_time - start_time)
         total_latency = end_time - start_time
         
-        # Fallback if no explicit phase split was detected (e.g., standard non-reasoning model)
-        if first_answer_token_time and first_token_time:
-            reasoning_duration = first_answer_token_time - first_token_time
-            answer_duration = end_time - first_answer_token_time
-        else:
-            reasoning_duration = 0
-            answer_duration = end_time - first_token_time if first_token_time else 0
+        if first_answer_token_time is None:
+            first_answer_token_time = first_token_time if first_token_time else end_time
 
+        reasoning_duration = first_answer_token_time - first_token_time
+        answer_duration = end_time - first_answer_token_time
         generation_time = end_time - first_token_time if first_token_time else 0
 
-        # Bugfix B: Calculate TPS using the actual generation time elapsed
-        if completion_tokens > 0 and generation_time > 0:
-            tps = completion_tokens / generation_time
-        else:
-            # Fallback based on character length heuristics if API usage fails
-            est_tokens = (len(thinking_text) + len(answer_text)) // 4
-            tps = est_tokens / generation_time if generation_time > 0 else 0
-
+        estimated_tokens = (len(thinking_text) + len(answer_text)) // 4
+        tps = (estimated_tokens / generation_time) if estimated_tokens > 0 and generation_time > 0 else 0
         thinking_ratio = (reasoning_duration / total_latency * 100) if total_latency > 0 else 0
 
         return {
@@ -299,15 +330,57 @@ async def measure_request_streaming(client, model_name, prompt, request_id):
             "answer_time": answer_duration,
             "thinking_ratio": thinking_ratio,
             "tps": tps,
-            "tokens": completion_tokens,
+            "tokens": estimated_tokens,
             "success": True,
             "thinking": thinking_text,
             "answer": answer_text,
             "streaming": True
         }
     except Exception as e:
+        end_time = time.perf_counter()
         print(f"  [DEBUG] Streaming request failed: {e}")
-        return {"id": request_id, "success": False, "streaming": True}
+        
+        # Fallback parsing if exception occurred mid-stream
+        if not has_native_reasoning and accumulated_content:
+            if "<think>" in accumulated_content and "</think>" in accumulated_content:
+                parts = accumulated_content.split("</think>", 1)
+                thinking_text = parts[0].replace("<think>", "").strip()
+                answer_text = parts[1].strip()
+            elif "</think>" in accumulated_content:
+                parts = accumulated_content.split("</think>", 1)
+                thinking_text = parts[0].strip()
+                answer_text = parts[1].strip()
+            else:
+                answer_text = accumulated_content
+
+        ttft = (first_token_time - start_time) if first_token_time else (end_time - start_time)
+        total_latency = end_time - start_time
+        
+        if first_answer_token_time is None:
+            first_answer_token_time = first_token_time if first_token_time else end_time
+
+        reasoning_duration = first_answer_token_time - (first_token_time or start_time)
+        answer_duration = end_time - first_answer_token_time
+        generation_time = end_time - first_token_time if first_token_time else 0
+
+        estimated_tokens = (len(thinking_text) + len(answer_text)) // 4
+        tps = (estimated_tokens / generation_time) if estimated_tokens > 0 and generation_time > 0 else 0
+        thinking_ratio = (reasoning_duration / total_latency * 100) if total_latency > 0 else 0
+
+        return {
+            "id": request_id,
+            "ttft": ttft,
+            "total_latency": total_latency,
+            "reasoning_time": reasoning_duration,
+            "answer_time": answer_duration,
+            "thinking_ratio": thinking_ratio,
+            "tps": tps,
+            "tokens": estimated_tokens,
+            "success": False,
+            "thinking": thinking_text,
+            "answer": answer_text,
+            "streaming": True
+        }
 
 
 async def measure_request_non_streaming(client, model_name, prompt, request_id):
@@ -322,7 +395,7 @@ async def measure_request_non_streaming(client, model_name, prompt, request_id):
         )
         end_time = time.perf_counter()
         full_text = response.choices[0].message.content or ""
-        total_tokens = response.usage.completion_tokens if response.usage else 0
+        total_tokens = response.usage.completion_tokens if response.usage else (len(full_text) // 4)
 
         return {
             "id": request_id,
@@ -338,16 +411,33 @@ async def measure_request_non_streaming(client, model_name, prompt, request_id):
             "streaming": False
         }
     except Exception as e:
+        end_time = time.perf_counter()
         print(f"  [DEBUG] Non-streaming request failed: {e}")
-        return {"id": request_id, "success": False, "streaming": False}
+        duration = end_time - start_time
+        return {
+            "id": request_id,
+            "ttft": duration,
+            "total_latency": duration,
+            "reasoning_time": 0,
+            "answer_time": duration,
+            "thinking_ratio": 0,
+            "tps": 0,
+            "tokens": 0,
+            "success": False,
+            "answer": "",
+            "streaming": False
+        }
 
 
 async def measure_request(client, model_name, prompt, request_id):
     """Wraps the request, attempting streaming first and falling back to non-streaming if needed."""
     result = await measure_request_streaming(client, model_name, prompt, request_id)
-    if result.get("success") and (not result.get("answer") or result.get("tokens", 0) == 0):
-        print(f"  [INFO] Streaming provided no content deltas, trying non-streaming...")
-        result = await measure_request_non_streaming(client, model_name, prompt, request_id)
+    if not result.get("success") or not result.get("answer") or result.get("tokens", 0) == 0:
+        print(f"  [INFO] Streaming failed or provided no content deltas, trying non-streaming...")
+        fallback_result = await measure_request_non_streaming(client, model_name, prompt, request_id)
+        if not fallback_result.get("success"):
+            return fallback_result
+        return fallback_result
     return result
 
 
@@ -355,9 +445,8 @@ async def run_benchmark(url, api_key, id_selection, verbose=False):
     """Main function to discover models, load prompts, and run the evaluation sequence."""
     client = AsyncOpenAI(base_url=url, api_key=api_key)
 
-    # Automated model lookup from server
     print("Querying server for actively loaded models...")
-    model_name = "facebook/opt-125m"  # Local fallback model
+    model_name = "facebook/opt-125m"  
     try:
         models_list = await client.models.list()
         if models_list.data:
