@@ -37,12 +37,50 @@ Run specific problems:
 
 ## Metrics
 
-The benchmark reports:
+The benchmark provides a detailed performance summary:
 
-- **TTFT** (Time to First Token) – latency until the first content token arrives
-- **Latency** – total wall-clock time for the complete response
-- **TPS** (Tokens Per Second) – throughput based on actual completion token count from the server's usage report
-- **Answer Accuracy** – extracted answer compared against the known correct value
+### Latency & Throughput
+- **TTFT** (Time to First Token) – Latency until the first content token arrives.
+- **Thinking-Ph.** – Duration of the reasoning/thinking phase.
+- **Answer-Ph.** – Duration of the visible answer generation phase.
+- **Latency** – Total wall-clock time for the complete response.
+- **TPS** (Tokens Per Second) – Throughput based on actual completion token count from the server's usage report.
+
+### Accuracy & Reasoning
+- **Answer Accuracy** – Extracted answer compared against the known correct value.
+- **Think-Ratio** – Percentage of total latency spent in the reasoning phase.
+
+### Token Statistics
+- **Reason. Toks** – Number of reasoning/thinking tokens.
+- **Answer Toks** – Number of visible answer tokens.
+- **Total Tokens** – Sum of reasoning and answer tokens.
+
+## Example Output
+
+```text
+===================================================================================================================
+  ADVANCED STATISTICS & PERFORMANCE SUMMARY
+===================================================================================================================
+  ID             Status      Exp   Rec      TTFT  Think-Time    Ans-Time     Latency   Tok-R   Tok-A    TPS
+  ---------------------------------------------------------------------------------------------------------------
+  2026-I-1       CORRECT      42    42     3.17s   2m 29.05s   2m 22.32s   4m 54.55s    1776    1584   11.5
+
+  ---------------------------------------------------------------------------------------------------------------
+  Total:  1 tasks | 1 successful | 0 failed
+  Correct: 1/1 (100.0%)
+
+  TTFT         - Min: 3.17s     | Max: 3.17s     | Avg: 3.17s
+  Thinking-Ph. - Min: 2m 29.05s | Max: 2m 29.05s | Avg: 2m 29.05s
+  Answer-Ph.   - Min: 2m 22.32s | Max: 2m 22.32s | Avg: 2m 22.32s
+  Full Latency - Min: 4m 54.55s | Max: 4m 54.55s | Avg: 4m 54.55s
+  Think-Ratio  - Min: 50.6%     | Max: 50.6%     | Avg: 50.6%
+
+  Reason. Toks - Min: 1776      | Max: 1776      | Avg: 1776
+  Answer Toks  - Min: 1584      | Max: 1584      | Avg: 1584
+  Total Tokens - Min: 3360      | Max: 3360      | Avg: 3360
+  Total TPS    - Min: 11.5      | Max: 11.5      | Avg: 11.5
+===================================================================================================================
+```
 
 ## Prompt Data
 
