@@ -1,18 +1,24 @@
 #!/bin/bash
 
 # Configuration - adjust default values here
-DEFAULT_URL="http://192.168.0.109:1234/v1"
+DEFAULT_URL="http://localhost:1234/v1"
 DEFAULT_KEY="YOUR_API_KEY"
 DEFAULT_ID="1"
 
 # Disable globbing so "1-3" is not expanded as a pattern
 set -f
 
-# Parse flags
+# Parse flags - accept optional positional URL as first argument
 URL="$DEFAULT_URL"
 KEY="$DEFAULT_KEY"
 ID="$DEFAULT_ID"
 DRY_RUN=0
+
+# Handle optional positional URL (first argument, if not a flag)
+if [ $# -gt 0 ] && [[ "$1" != "-"* ]]; then
+    URL="$1"
+    shift
+fi
 
 # Collect all values after --id (supports: single ID, range "1-3", or multiple IDs)
 ID_VALUES=()
