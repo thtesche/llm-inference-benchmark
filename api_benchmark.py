@@ -86,7 +86,7 @@ def format_time(seconds):
 
 
 def print_statistics(results):
-    """Outputs an advanced statistics table for all performed benchmarks."""
+    """Outputs an advanced statistics table for all performed benchmarks including token breakdown."""
     if not results:
         print("\n[STATS] No results found.")
         return
@@ -103,22 +103,26 @@ def print_statistics(results):
     think_times = [r["reasoning_time"] for r in results if "reasoning_time" in r]
     answer_times = [r["answer_time"] for r in results if "answer_time" in r]
     ratios = [r["thinking_ratio"] for r in results if "thinking_ratio" in r]
+    
+    reasoning_tokens_list = [r["reasoning_tokens"] for r in results if "reasoning_tokens" in r]
+    answer_tokens_list = [r["answer_tokens"] for r in results if "answer_tokens" in r]
+    total_tokens_list = [r["tokens"] for r in results if "tokens" in r]
 
-    print("\n" + "="*95)
-    print("="*95)
+    print("\n" + "="*115)
+    print("="*115)
     print("  ADVANCED STATISTICS & PERFORMANCE SUMMARY")
-    print("="*95)
+    print("="*115)
 
-    # Unified layout template for perfect vertical column alignment
-    ROW_FMT = "  {id:<14} {status:<10} {exp:>5} {rec:>5} {ttft:>10} {think:>12} {answer:>13} {latency:>12} {tps:>7}"
+    # Unified layout template for perfect vertical column alignment (expanded for tokens)
+    ROW_FMT = "  {id:<14} {status:<9} {exp:>5} {rec:>5} {ttft:>9} {think:>11} {answer:>11} {latency:>11} {tok_r:>7} {tok_a:>7} {tps:>6}"
 
     # --- Table Header ---
     print(ROW_FMT.format(
         id="ID", status="Status", exp="Exp", rec="Rec",
-        ttft="TTFT", think="Think-Time", answer="Answer-Time",
-        latency="Latency", tps="TPS"
+        ttft="TTFT", think="Think-Time", answer="Ans-Time",
+        latency="Latency", tok_r="Tok-R", tok_a="Tok-A", tps="TPS"
     ))
-    print("  " + "-"*91)
+    print("  " + "-"*111)
 
     # --- Table Rows ---
     for r in results:
@@ -143,11 +147,13 @@ def print_statistics(results):
             think=format_time(r.get('reasoning_time', 0)),
             answer=format_time(r.get('answer_time', 0)),
             latency=format_time(r.get('total_latency', 0)),
+            tok_r=r.get('reasoning_tokens', 0),
+            tok_a=r.get('answer_tokens', 0),
             tps=f"{r.get('tps', 0):.1f}" if r.get('tps', 0) > 0 else "0.0"
         ))
 
     # --- Summary Section ---
-    print("\n  " + "-"*91)
+    print("\n  " + "-"*111)
     print(f"  Total:  {total} tasks | {len(successful)} successful | {failed} failed")
     if len(successful) > 0:
         print(f"  Correct: {correct}/{len(successful)} ({correct/len(successful)*100:.1f}%)")
@@ -155,6 +161,7 @@ def print_statistics(results):
         print(f"  Correct: 0/0 (0.0%)")
     print()
 
+    # Time Statistics
     if ttfts:
         print(f"  TTFT         - Min: {format_time(min(ttfts)):<9} | Max: {format_time(max(ttfts)):<9} | Avg: {format_time(sum(ttfts)/len(ttfts))}")
     if think_times:
@@ -170,18 +177,27 @@ def print_statistics(results):
         avg_rat = f"{sum(ratios)/len(ratios):.1f}%"
         print(f"  Think-Ratio  - Min: {min_rat:<9} | Max: {max_rat:<9} | Avg: {avg_rat}")
         
+    print()
+    # Token Statistics
+    if reasoning_tokens_list:
+        print(f"  Reason. Toks - Min: {min(reasoning_tokens_list):<9} | Max: {max(reasoning_tokens_list):<9} | Avg: {int(sum(reasoning_tokens_list)/len(reasoning_tokens_list))}")
+    if answer_tokens_list:
+        print(f"  Answer Toks  - Min: {min(answer_tokens_list):<9} | Max: {max(answer_tokens_list):<9} | Avg: {int(sum(answer_tokens_list)/len(answer_tokens_list))}")
+    if total_tokens_list:
+        print(f"  Total Tokens - Min: {min(total_tokens_list):<9} | Max: {max(total_tokens_list):<9} | Avg: {int(sum(total_tokens_list)/len(total_tokens_list))}")
+
     if tps_values:
         min_tps = f"{min(tps_values):.1f}"
         max_tps = f"{max(tps_values):.1f}"
         avg_tps = f"{sum(tps_values)/len(tps_values):.1f}"
         print(f"  Total TPS    - Min: {min_tps:<9} | Max: {max_tps:<9} | Avg: {avg_tps}")
         
-    print("="*95)
+    print("="*115)
     print("Benchmark finished.")
 
 
 PROMPTS_FILE = "prompts/aime_2026.jsonl"
-DEBUG_HELLO = False
+DEBUG_HELLO = True
 
 
 def load_prompts(filepath):
@@ -232,10 +248,9 @@ def parse_id_selection(id_arg):
 
 
 async def measure_request_streaming(client, model_name, prompt, request_id):
-    """Measures streaming response and separates thinking from answering performance."""
+    """Measures streaming response and separates thinking from answering performance and token count."""
     start_time = time.perf_counter()
 
-    # Define all tracking parameters upfront to safeguard against mid-stream exceptions
     thinking_text = ""
     answer_text = ""
     accumulated_content = ""
@@ -318,8 +333,12 @@ async def measure_request_streaming(client, model_name, prompt, request_id):
         answer_duration = end_time - first_answer_token_time
         generation_time = end_time - first_token_time if first_token_time else 0
 
-        estimated_tokens = (len(thinking_text) + len(answer_text)) // 4
-        tps = (estimated_tokens / generation_time) if estimated_tokens > 0 and generation_time > 0 else 0
+        # Calculate Tokens separately
+        reasoning_tokens = len(thinking_text) // 4
+        answer_tokens = len(answer_text) // 4
+        total_tokens = reasoning_tokens + answer_tokens
+
+        tps = (total_tokens / generation_time) if total_tokens > 0 and generation_time > 0 else 0
         thinking_ratio = (reasoning_duration / total_latency * 100) if total_latency > 0 else 0
 
         return {
@@ -330,7 +349,9 @@ async def measure_request_streaming(client, model_name, prompt, request_id):
             "answer_time": answer_duration,
             "thinking_ratio": thinking_ratio,
             "tps": tps,
-            "tokens": estimated_tokens,
+            "tokens": total_tokens,
+            "reasoning_tokens": reasoning_tokens,
+            "answer_tokens": answer_tokens,
             "success": True,
             "thinking": thinking_text,
             "answer": answer_text,
@@ -340,7 +361,6 @@ async def measure_request_streaming(client, model_name, prompt, request_id):
         end_time = time.perf_counter()
         print(f"  [DEBUG] Streaming request failed: {e}")
         
-        # Fallback parsing if exception occurred mid-stream
         if not has_native_reasoning and accumulated_content:
             if "<think>" in accumulated_content and "</think>" in accumulated_content:
                 parts = accumulated_content.split("</think>", 1)
@@ -363,8 +383,11 @@ async def measure_request_streaming(client, model_name, prompt, request_id):
         answer_duration = end_time - first_answer_token_time
         generation_time = end_time - first_token_time if first_token_time else 0
 
-        estimated_tokens = (len(thinking_text) + len(answer_text)) // 4
-        tps = (estimated_tokens / generation_time) if estimated_tokens > 0 and generation_time > 0 else 0
+        reasoning_tokens = len(thinking_text) // 4
+        answer_tokens = len(answer_text) // 4
+        total_tokens = reasoning_tokens + answer_tokens
+
+        tps = (total_tokens / generation_time) if total_tokens > 0 and generation_time > 0 else 0
         thinking_ratio = (reasoning_duration / total_latency * 100) if total_latency > 0 else 0
 
         return {
@@ -375,7 +398,9 @@ async def measure_request_streaming(client, model_name, prompt, request_id):
             "answer_time": answer_duration,
             "thinking_ratio": thinking_ratio,
             "tps": tps,
-            "tokens": estimated_tokens,
+            "tokens": total_tokens,
+            "reasoning_tokens": reasoning_tokens,
+            "answer_tokens": answer_tokens,
             "success": False,
             "thinking": thinking_text,
             "answer": answer_text,
@@ -395,7 +420,20 @@ async def measure_request_non_streaming(client, model_name, prompt, request_id):
         )
         end_time = time.perf_counter()
         full_text = response.choices[0].message.content or ""
-        total_tokens = response.usage.completion_tokens if response.usage else (len(full_text) // 4)
+        
+        # Versuche Token-Aufteilung bei Non-Streaming (falls Tags im Text stehen)
+        thinking_text = ""
+        answer_text = full_text
+        if "<think>" in full_text and "</think>" in full_text:
+            parts = full_text.split("</think>", 1)
+            thinking_text = parts[0].replace("<think>", "").strip()
+            answer_text = parts[1].strip()
+            
+        reasoning_tokens = len(thinking_text) // 4
+        answer_tokens = len(answer_text) // 4
+        
+        # Nimm präzise Tokenzahl, wenn die API sie schickt, sonst Schätzung
+        total_tokens = response.usage.completion_tokens if response.usage else (reasoning_tokens + answer_tokens)
 
         return {
             "id": request_id,
@@ -406,8 +444,11 @@ async def measure_request_non_streaming(client, model_name, prompt, request_id):
             "thinking_ratio": 0,
             "tps": total_tokens / (end_time - start_time) if (end_time - start_time) > 0 else 0,
             "tokens": total_tokens,
+            "reasoning_tokens": reasoning_tokens,
+            "answer_tokens": answer_tokens,
             "success": True,
-            "answer": full_text,
+            "answer": answer_text,
+            "thinking": thinking_text,
             "streaming": False
         }
     except Exception as e:
@@ -423,6 +464,8 @@ async def measure_request_non_streaming(client, model_name, prompt, request_id):
             "thinking_ratio": 0,
             "tps": 0,
             "tokens": 0,
+            "reasoning_tokens": 0,
+            "answer_tokens": 0,
             "success": False,
             "answer": "",
             "streaming": False
@@ -487,29 +530,19 @@ async def run_benchmark(url, api_key, id_selection, verbose=False):
         print(f"Expected: {expected_answer}")
         print("-" * 50)
 
-        result = await measure_request(client, model_name, problem, prompt_data["id"])
-
-        results.append({
-            **result,
-            "expected_answer": expected_answer
-        })
-
-        if verbose and result["success"] and result.get("streaming"):
-            if result.get("thinking"):
-                print(f"\n--- Thinking Process ---")
-                print(result["thinking"][:400] + "..." if len(result["thinking"]) > 400 else result["thinking"])
-            print(f"\n--- Full Response ---")
-            print(result["answer"][:400] + "..." if len(result.get("answer", "")) > 400 else result.get("answer", ""))
+        result = await measure_request(client, model_name, problem, prompt_data['id'])
+        result["expected_answer"] = expected_answer
+        results.append(result)
 
     print_statistics(results)
 
-
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--url", type=str, required=True, help="URL of the server (e.g. http://192.168.0.109:1234/v1)")
-    parser.add_argument("--key", type=str, required=True, help="API Key")
-    parser.add_argument("--id", type=str, default=None, help="Position (1-based), e.g. '5' or '1-3'")
-    parser.add_argument("--verbose", action="store_true", help="Outputs truncated thinking and full response")
+    parser = argparse.ArgumentParser(description="Run AIME API benchmark.")
+    parser.add_argument("--url", type=str, required=True, help="API base URL")
+    parser.add_argument("--key", type=str, required=True, help="API key")
+    parser.add_argument("--id", type=str, help="Prompt IDs (e.g., '1-3', '6 8 10')")
+    parser.add_argument("--verbose", action="store_true", help="Enable verbose output")
+
     args = parser.parse_args()
 
-    asyncio.run(run_benchmark(args.url, args.key, args.id, verbose=args.verbose))
+    asyncio.run(run_benchmark(args.url, args.key, args.id, args.verbose))
