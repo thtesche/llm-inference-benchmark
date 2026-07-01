@@ -36,7 +36,7 @@ class TestRunBenchmarkDefaults:
     def test_default_url(self):
         r = _run([])
         assert r.returncode == 0
-        assert _extract_url(r.stdout) == "http://192.168.0.109:1234/v1"
+        assert _extract_url(r.stdout) == "http://localhost:1234/v1"
 
     def test_default_id(self):
         r = _run([])

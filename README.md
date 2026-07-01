@@ -5,25 +5,25 @@ Benchmarking tool for measuring the inference performance of LLMs served via an 
 ## Quick Start
 
 ```bash
-./run_benchmark.sh --url http://192.168.0.109:1234/v1 --key YOUR_API_KEY
+./run_benchmark.sh --url http://localhost:1234/v1 --key YOUR_API_KEY
 ```
 
 Run a single problem by position (1-based):
 
 ```bash
-./run_benchmark.sh --url http://localhost:8000/v1 --key YOUR_KEY --id 5
+./run_benchmark.sh --url http://localhost:1234/v1 --key YOUR_KEY --id 5
 ```
 
 Run a range of problems:
 
 ```bash
-./run_benchmark.sh --url http://localhost:8000/v1 --key YOUR_KEY --id '1-3'
+./run_benchmark.sh --url http://localhost:1234/v1 --key YOUR_KEY --id '1-3'
 ```
 
 Run specific problems:
 
 ```bash
-./run_benchmark.sh --url http://localhost:8000/v1 --key YOUR_KEY --id 6 8 10
+./run_benchmark.sh --url http://localhost:1234/v1 --key YOUR_KEY --id 6 8 10
 ```
 
 ## Options

@@ -197,8 +197,7 @@ def print_statistics(results):
 
 
 PROMPTS_FILE = "prompts/aime_2026.jsonl"
-DEBUG_HELLO = True
-
+DEBUG_HELLO = False
 
 def load_prompts(filepath):
     """Loads all prompt entries from the provided JSONL file."""
