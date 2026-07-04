@@ -94,7 +94,8 @@ def print_statistics(results):
     correct = 0
     total = len(results)
     successful = [r for r in results if r.get("success")]
-    failed = total - len(successful)
+    successful_count = len(successful)
+    failed = total - successful_count
 
     # Aggregate metrics from ALL benchmarks (including failed ones if they have metrics)
     ttfts = [r["ttft"] for r in results if "ttft" in r]
@@ -154,9 +155,9 @@ def print_statistics(results):
 
     # --- Summary Section ---
     print("\n  " + "-"*111)
-    print(f"  Total:  {total} tasks | {len(successful)} successful | {failed} failed")
-    if len(successful) > 0:
-        print(f"  Correct: {correct}/{len(successful)} ({correct/len(successful)*100:.1f}%)")
+    print(f"  Total:  {total} tasks | {successful_count} successful | {failed} failed")
+    if successful_count > 0:
+        print(f"  Correct: {correct}/{successful_count} ({correct/successful_count*100:.1f}%)")
     else:
         print(f"  Correct: 0/0 (0.0%)")
     print()
