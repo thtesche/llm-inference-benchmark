@@ -246,10 +246,12 @@ def parse_id_selection(id_arg):
     return None
 
 
-async def measure_request_streaming(client, model_name, prompt, request_id):
-    """Measures streaming response and separates thinking from answering performance and token count."""
-    start_time = time.perf_counter()
-
+async def measure_request_streaming(client, model_name, prompt, request_id, max_retries=3):
+    """Measures streaming response with retries and separates thinking from answering performance and token count.
+    
+    Displays real-time tokens/sec for thinking (reasoning) and answer phases during streaming.
+    Retries on failure with exponential backoff.
+    """
     thinking_text = ""
     answer_text = ""
     accumulated_content = ""
@@ -261,239 +263,223 @@ async def measure_request_streaming(client, model_name, prompt, request_id):
     # Token counters for real-time display
     cumulative_think_tokens = 0
     cumulative_answer_tokens = 0
-    last_display_time = start_time
+    last_display_time = 0
     display_interval = 0.5  # seconds between display updates
 
-    try:
-        response = await client.chat.completions.create(
-            model=model_name,
-            messages=[
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": prompt + USER_PROMPT_SUFFIX}
-            ],
-            max_tokens=32768,
-            stream=True,
-            timeout=120.0
-        )
+    for attempt in range(1, max_retries + 1):
+        start_time = time.perf_counter()
 
-        async for chunk in response:
-            chunk_count += 1
+        # Reset state for retries
+        if attempt > 1:
+            thinking_text = ""
+            answer_text = ""
+            accumulated_content = ""
+            first_token_time = None
+            first_answer_token_time = None
+            has_native_reasoning = False
+            chunk_count = 0
+            cumulative_think_tokens = 0
+            cumulative_answer_tokens = 0
+            last_display_time = 0
+            print(f"  [RETRY] Attempt {attempt}/{max_retries} after {((attempt - 1) * 2):.0f}s backoff...")
 
-            if not chunk.choices or len(chunk.choices) == 0:
-                continue
+        try:
+            response = await client.chat.completions.create(
+                model=model_name,
+                messages=[
+                    {"role": "system", "content": SYSTEM_PROMPT},
+                    {"role": "user", "content": prompt + USER_PROMPT_SUFFIX}
+                ],
+                max_tokens=32768,
+                stream=True,
+                timeout=300.0
+            )
 
-            if first_token_time is None:
-                first_token_time = time.perf_counter()
+            async for chunk in response:
+                chunk_count += 1
 
-            choice = chunk.choices[0]
-            
-            reasoning_content = None
-            if hasattr(choice, 'delta') and choice.delta:
-                reasoning_content = getattr(choice.delta, 'reasoning_content', None)
+                if not chunk.choices or len(chunk.choices) == 0:
+                    continue
 
-            content = None
-            if hasattr(choice, 'delta') and choice.delta:
-                content = choice.delta.content
-            if content is None and hasattr(choice, 'text'):
-                content = choice.text
+                if first_token_time is None:
+                    first_token_time = time.perf_counter()
 
-            if reasoning_content:
-                has_native_reasoning = True
-                thinking_text += reasoning_content
+                choice = chunk.choices[0]
+                
+                reasoning_content = None
+                if hasattr(choice, 'delta') and choice.delta:
+                    reasoning_content = getattr(choice.delta, 'reasoning_content', None)
 
-            if content:
-                if has_native_reasoning:
-                    if first_answer_token_time is None:
-                        first_answer_token_time = time.perf_counter()
-                    answer_text += content
+                content = None
+                if hasattr(choice, 'delta') and choice.delta:
+                    content = choice.delta.content
+                if content is None and hasattr(choice, 'text'):
+                    content = choice.text
+
+                if reasoning_content:
+                    has_native_reasoning = True
+                    thinking_text += reasoning_content
+
+                if content:
+                    if has_native_reasoning:
+                        if first_answer_token_time is None:
+                            first_answer_token_time = time.perf_counter()
+                        answer_text += content
+                    else:
+                        accumulated_content += content
+                        if "���" in accumulated_content and first_answer_token_time is None:
+                            first_answer_token_time = time.perf_counter()
+
+                # Real-time tokens/sec display
+                now = time.perf_counter()
+                if now - last_display_time >= display_interval:
+                    cumulative_think_tokens = len(thinking_text) // 4
+                    cumulative_answer_tokens = len(answer_text) // 4
+                    elapsed = now - start_time
+                    think_tps = cumulative_think_tokens / elapsed if elapsed > 0 else 0
+                    answer_tps = cumulative_answer_tokens / elapsed if elapsed > 0 else 0
+                    print(f"  [STREAM] Think: {cumulative_think_tokens} tok ({think_tps:.1f}/s)  |  Answer: {cumulative_answer_tokens} tok ({answer_tps:.1f}/s)  |  Total: {cumulative_think_tokens + cumulative_answer_tokens} tok ({(cumulative_think_tokens + cumulative_answer_tokens)/elapsed:.1f}/s)", end="\r", flush=True)
+                    last_display_time = now
+
+            end_time = time.perf_counter()
+
+            # Check if we got any meaningful content — retry if empty
+            if not has_native_reasoning and not accumulated_content:
+                print(f"  [RETRY] No content received, retrying...")
+                continue  # retry
+
+            if not has_native_reasoning:
+                if "���" in accumulated_content and "���" in accumulated_content:
+                    parts = accumulated_content.split("���", 1)
+                    thinking_text = parts[0].replace("���", "").strip()
+                    answer_text = parts[1].strip()
+                elif "���" in accumulated_content:
+                    parts = accumulated_content.split("���", 1)
+                    thinking_text = parts[0].strip()
+                    answer_text = parts[1].strip()
                 else:
-                    accumulated_content += content
-                    if "</think>" in accumulated_content and first_answer_token_time is None:
-                        first_answer_token_time = time.perf_counter()
-            # Real-time tokens/sec display
-            now = time.perf_counter()
-            if now - last_display_time >= display_interval:
-                cumulative_think_tokens = len(thinking_text) // 4
-                cumulative_answer_tokens = len(answer_text) // 4
-                elapsed = now - start_time
-                think_tps = cumulative_think_tokens / elapsed if elapsed > 0 else 0
-                answer_tps = cumulative_answer_tokens / elapsed if elapsed > 0 else 0
-                print(f"  [STREAM] Think: {cumulative_think_tokens} tok ({think_tps:.1f}/s)  |  Answer: {cumulative_answer_tokens} tok ({answer_tps:.1f}/s)  |  Total: {cumulative_think_tokens + cumulative_answer_tokens} tok ({(cumulative_think_tokens + cumulative_answer_tokens)/elapsed:.1f}/s)", end="\r", flush=True)
-                last_display_time = now
+                    thinking_text = ""
+                    answer_text = accumulated_content
 
-        end_time = time.perf_counter()
+            # Final newline after streaming (clears the \r line)
+            print()
 
-        if not has_native_reasoning:
-            if "<think>" in accumulated_content and "</think>" in accumulated_content:
-                parts = accumulated_content.split("</think>", 1)
-                thinking_text = parts[0].replace("<think>", "").strip()
-                answer_text = parts[1].strip()
-            elif "</think>" in accumulated_content:
-                parts = accumulated_content.split("</think>", 1)
-                thinking_text = parts[0].strip()
-                answer_text = parts[1].strip()
-            else:
-                thinking_text = ""
-                answer_text = accumulated_content
-
-        ttft = (first_token_time - start_time) if first_token_time else (end_time - start_time)
-        total_latency = end_time - start_time
-        
-        if first_answer_token_time is None:
-            first_answer_token_time = first_token_time if first_token_time else end_time
-
-        reasoning_duration = first_answer_token_time - first_token_time
-        answer_duration = end_time - first_answer_token_time
-        generation_time = end_time - first_token_time if first_token_time else 0
-
-        # Calculate Tokens separately
-        reasoning_tokens = len(thinking_text) // 4
-        answer_tokens = len(answer_text) // 4
-        total_tokens = reasoning_tokens + answer_tokens
-
-        tps = (total_tokens / generation_time) if total_tokens > 0 and generation_time > 0 else 0
-        thinking_ratio = (reasoning_duration / total_latency * 100) if total_latency > 0 else 0
-
-        return {
-            "id": request_id,
-            "ttft": ttft,
-            "total_latency": total_latency,
-            "reasoning_time": reasoning_duration,
-            "answer_time": answer_duration,
-            "thinking_ratio": thinking_ratio,
-            "tps": tps,
-            "tokens": total_tokens,
-            "reasoning_tokens": reasoning_tokens,
-            "answer_tokens": answer_tokens,
-            "success": True,
-            "thinking": thinking_text,
-            "answer": answer_text,
-            "streaming": True
-        }
-    except Exception as e:
-        end_time = time.perf_counter()
-        print(f"  [DEBUG] Streaming request failed: {e}")
-        
-        if not has_native_reasoning and accumulated_content:
-            if "<think>" in accumulated_content and "</think>" in accumulated_content:
-                parts = accumulated_content.split("</think>", 1)
-                thinking_text = parts[0].replace("<think>", "").strip()
-                answer_text = parts[1].strip()
-            elif "</think>" in accumulated_content:
-                parts = accumulated_content.split("</think>", 1)
-                thinking_text = parts[0].strip()
-                answer_text = parts[1].strip()
-            else:
-                answer_text = accumulated_content
-
-        ttft = (first_token_time - start_time) if first_token_time else (end_time - start_time)
-        total_latency = end_time - start_time
-        
-        if first_answer_token_time is None:
-            first_answer_token_time = first_token_time if first_token_time else end_time
-
-        reasoning_duration = first_answer_token_time - (first_token_time or start_time)
-        answer_duration = end_time - first_answer_token_time
-        generation_time = end_time - first_token_time if first_token_time else 0
-
-        reasoning_tokens = len(thinking_text) // 4
-        answer_tokens = len(answer_text) // 4
-        total_tokens = reasoning_tokens + answer_tokens
-
-        tps = (total_tokens / generation_time) if total_tokens > 0 and generation_time > 0 else 0
-        thinking_ratio = (reasoning_duration / total_latency * 100) if total_latency > 0 else 0
-
-        return {
-            "id": request_id,
-            "ttft": ttft,
-            "total_latency": total_latency,
-            "reasoning_time": reasoning_duration,
-            "answer_time": answer_duration,
-            "thinking_ratio": thinking_ratio,
-            "tps": tps,
-            "tokens": total_tokens,
-            "reasoning_tokens": reasoning_tokens,
-            "answer_tokens": answer_tokens,
-            "success": False,
-            "thinking": thinking_text,
-            "answer": answer_text,
-            "streaming": True
-        }
-
-
-async def measure_request_non_streaming(client, model_name, prompt, request_id):
-    """Fallback method using standard non-streaming requests if streaming drops out."""
-    start_time = time.perf_counter()
-    try:
-        response = await client.chat.completions.create(
-            model=model_name,
-            messages=[{"role": "user", "content": prompt}],
-            max_tokens=4096,
-            stream=False
-        )
-        end_time = time.perf_counter()
-        full_text = response.choices[0].message.content or ""
-        
-        # Versuche Token-Aufteilung bei Non-Streaming (falls Tags im Text stehen)
-        thinking_text = ""
-        answer_text = full_text
-        if "<think>" in full_text and "</think>" in full_text:
-            parts = full_text.split("</think>", 1)
-            thinking_text = parts[0].replace("<think>", "").strip()
-            answer_text = parts[1].strip()
+            ttft = (first_token_time - start_time) if first_token_time else (end_time - start_time)
+            total_latency = end_time - start_time
             
-        reasoning_tokens = len(thinking_text) // 4
-        answer_tokens = len(answer_text) // 4
-        
-        # Nimm präzise Tokenzahl, wenn die API sie schickt, sonst Schätzung
-        total_tokens = response.usage.completion_tokens if response.usage else (reasoning_tokens + answer_tokens)
+            if first_answer_token_time is None:
+                first_answer_token_time = first_token_time if first_token_time else end_time
 
-        return {
-            "id": request_id,
-            "ttft": end_time - start_time,
-            "total_latency": end_time - start_time,
-            "reasoning_time": 0,
-            "answer_time": end_time - start_time,
-            "thinking_ratio": 0,
-            "tps": total_tokens / (end_time - start_time) if (end_time - start_time) > 0 else 0,
-            "tokens": total_tokens,
-            "reasoning_tokens": reasoning_tokens,
-            "answer_tokens": answer_tokens,
-            "success": True,
-            "answer": answer_text,
-            "thinking": thinking_text,
-            "streaming": False
-        }
-    except Exception as e:
-        end_time = time.perf_counter()
-        print(f"  [DEBUG] Non-streaming request failed: {e}")
-        duration = end_time - start_time
-        return {
-            "id": request_id,
-            "ttft": duration,
-            "total_latency": duration,
-            "reasoning_time": 0,
-            "answer_time": duration,
-            "thinking_ratio": 0,
-            "tps": 0,
-            "tokens": 0,
-            "reasoning_tokens": 0,
-            "answer_tokens": 0,
-            "success": False,
-            "answer": "",
-            "streaming": False
-        }
+            reasoning_duration = first_answer_token_time - first_token_time
+            answer_duration = end_time - first_answer_token_time
+            generation_time = end_time - first_token_time if first_token_time else 0
+
+            # Calculate Tokens separately
+            reasoning_tokens = len(thinking_text) // 4
+            answer_tokens = len(answer_text) // 4
+            total_tokens = reasoning_tokens + answer_tokens
+
+            tps = (total_tokens / generation_time) if total_tokens > 0 and generation_time > 0 else 0
+            thinking_ratio = (reasoning_duration / total_latency * 100) if total_latency > 0 else 0
+
+            return {
+                "id": request_id,
+                "ttft": ttft,
+                "total_latency": total_latency,
+                "reasoning_time": reasoning_duration,
+                "answer_time": answer_duration,
+                "thinking_ratio": thinking_ratio,
+                "tps": tps,
+                "tokens": total_tokens,
+                "reasoning_tokens": reasoning_tokens,
+                "answer_tokens": answer_tokens,
+                "success": True,
+                "thinking": thinking_text,
+                "answer": answer_text,
+                "streaming": True
+            }
+
+        except Exception as e:
+            end_time = time.perf_counter()
+            # Final newline to clear the \r line before printing error
+            print()
+            print(f"  [DEBUG] Streaming request failed (attempt {attempt}/{max_retries}): {e}")
+
+            # Save partial result for the last failed attempt
+            partial_thinking_text = thinking_text
+            partial_answer_text = answer_text
+            partial_accumulated = accumulated_content
+            partial_has_native = has_native_reasoning
+            partial_first_token = first_token_time
+            partial_first_answer = first_answer_token_time
+
+            if attempt < max_retries:
+                # Exponential backoff: 2s, 4s, 8s, ...
+                backoff = (attempt - 1) * 2
+                print(f"  [RETRY] Waiting {backoff}s before next attempt...")
+                await asyncio.sleep(backoff)
+                continue  # retry
+
+            # All retries exhausted - return failure
+            # Try to salvage partial content
+            if not partial_has_native and partial_accumulated:
+                if "���" in partial_accumulated and "���" in partial_accumulated:
+                    parts = partial_accumulated.split("���", 1)
+                    partial_thinking_text = parts[0].replace("���", "").strip()
+                    partial_answer_text = parts[1].strip()
+                elif "���" in partial_accumulated:
+                    parts = partial_accumulated.split("���", 1)
+                    partial_thinking_text = parts[0].strip()
+                    partial_answer_text = parts[1].strip()
+                else:
+                    partial_answer_text = partial_accumulated
+
+            ttft = (partial_first_token - start_time) if partial_first_token else (end_time - start_time)
+            total_latency = end_time - start_time
+            
+            if partial_first_answer is None:
+                partial_first_answer = partial_first_token if partial_first_token else end_time
+
+            reasoning_duration = partial_first_answer - (partial_first_token or start_time)
+            answer_duration = end_time - partial_first_answer
+            generation_time = end_time - partial_first_token if partial_first_token else 0
+
+            reasoning_tokens = len(partial_thinking_text) // 4
+            answer_tokens = len(partial_answer_text) // 4
+            total_tokens = reasoning_tokens + answer_tokens
+
+            tps = (total_tokens / generation_time) if total_tokens > 0 and generation_time > 0 else 0
+            thinking_ratio = (reasoning_duration / total_latency * 100) if total_latency > 0 else 0
+
+            return {
+                "id": request_id,
+                "ttft": ttft,
+                "total_latency": total_latency,
+                "reasoning_time": reasoning_duration,
+                "answer_time": answer_duration,
+                "thinking_ratio": thinking_ratio,
+                "tps": tps,
+                "tokens": total_tokens,
+                "reasoning_tokens": reasoning_tokens,
+                "answer_tokens": answer_tokens,
+                "success": False,
+                "thinking": partial_thinking_text,
+                "answer": partial_answer_text,
+                "streaming": True
+            }
+
+
+
+
+
+
+
+
 
 
 async def measure_request(client, model_name, prompt, request_id):
-    """Wraps the request, attempting streaming first and falling back to non-streaming if needed."""
+    """Wraps the request with streaming and retry logic."""
     result = await measure_request_streaming(client, model_name, prompt, request_id)
-    if not result.get("success") or not result.get("answer") or result.get("tokens", 0) == 0:
-        print(f"  [INFO] Streaming failed or provided no content deltas, trying non-streaming...")
-        fallback_result = await measure_request_non_streaming(client, model_name, prompt, request_id)
-        if not fallback_result.get("success"):
-            return fallback_result
-        return fallback_result
     return result
 
 
