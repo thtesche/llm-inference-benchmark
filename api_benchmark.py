@@ -359,10 +359,19 @@ async def measure_request_streaming(client, model_name, prompt, request_id, max_
                     else:
                         think_tokens = len(thinking_text) // 4
                         ans_tokens = len(answer_text) // 4
-                    elapsed = now - start_time
-                    think_tps = think_tokens / elapsed if elapsed > 0 else 0
-                    answer_tps = ans_tokens / elapsed if elapsed > 0 else 0
-                    print(f"  [STREAM] Think: {think_tokens} tok ({think_tps:.1f}/s)  |  Answer: {ans_tokens} tok ({answer_tps:.1f}/s)  |  Total: {total_tokens_from_api} tok ({(total_tokens_from_api)/elapsed:.1f}/s)", end="\r", flush=True)
+                    # Time since first token (thinking phase duration)
+                    elapsed_think = (now - first_token_time) if first_token_time else (now - start_time)
+                    # Time since answer started (answer phase duration)
+                    elapsed_answer = (now - first_answer_token_time) if first_answer_token_time else elapsed_think
+                    # TPS per phase: tokens / phase-duration (not total elapsed time)
+                    think_tps = think_tokens / elapsed_think if elapsed_think > 0 else 0
+                    answer_tps = ans_tokens / elapsed_answer if elapsed_answer > 0 else 0
+                    # Total: all tokens / total generation time (from first token)
+                    total_tokens = think_tokens + ans_tokens
+                    total_tps = total_tokens / elapsed_think if elapsed_think > 0 else 0
+                    # Overwrite line in-place; pad with spaces to clear old trailing chars
+                    line = f"  [STREAM] Think: {think_tokens} tok ({think_tps:.1f}/s)  |  Answer: {ans_tokens} tok ({answer_tps:.1f}/s)  |  Total: {total_tokens} tok ({total_tps:.1f}/s)"
+                    print(f"\r{line:<120} ", end="", flush=True)
                     last_display_time = now
 
             end_time = time.perf_counter()
