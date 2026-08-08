@@ -3,7 +3,6 @@ import time
 import asyncio
 import argparse
 import re
-import httpx
 from openai import AsyncOpenAI
 
 # AIME System-Prompt and User-Prompt Suffix
@@ -259,9 +258,13 @@ async def measure_request_streaming(client, model_name, prompt, request_id):
     has_native_reasoning = False     
     chunk_count = 0
 
-    try:
-        custom_timeout = httpx.Timeout(120.0, read=15.0)
+    # Token counters for real-time display
+    cumulative_think_tokens = 0
+    cumulative_answer_tokens = 0
+    last_display_time = start_time
+    display_interval = 0.5  # seconds between display updates
 
+    try:
         response = await client.chat.completions.create(
             model=model_name,
             messages=[
@@ -270,7 +273,7 @@ async def measure_request_streaming(client, model_name, prompt, request_id):
             ],
             max_tokens=32768,
             stream=True,
-            timeout=custom_timeout
+            timeout=120.0
         )
 
         async for chunk in response:
@@ -307,6 +310,16 @@ async def measure_request_streaming(client, model_name, prompt, request_id):
                     accumulated_content += content
                     if "</think>" in accumulated_content and first_answer_token_time is None:
                         first_answer_token_time = time.perf_counter()
+            # Real-time tokens/sec display
+            now = time.perf_counter()
+            if now - last_display_time >= display_interval:
+                cumulative_think_tokens = len(thinking_text) // 4
+                cumulative_answer_tokens = len(answer_text) // 4
+                elapsed = now - start_time
+                think_tps = cumulative_think_tokens / elapsed if elapsed > 0 else 0
+                answer_tps = cumulative_answer_tokens / elapsed if elapsed > 0 else 0
+                print(f"  [STREAM] Think: {cumulative_think_tokens} tok ({think_tps:.1f}/s)  |  Answer: {cumulative_answer_tokens} tok ({answer_tps:.1f}/s)  |  Total: {cumulative_think_tokens + cumulative_answer_tokens} tok ({(cumulative_think_tokens + cumulative_answer_tokens)/elapsed:.1f}/s)", end="\r", flush=True)
+                last_display_time = now
 
         end_time = time.perf_counter()
 

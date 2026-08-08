@@ -39,6 +39,16 @@ Run specific problems:
 
 The benchmark provides a detailed performance summary:
 
+### Real-Time Streaming Display
+
+During streaming, the benchmark displays live tokens/sec for both the thinking (reasoning) and answer phases every 0.5 seconds:
+
+```
+  [STREAM] Think: 150 tok (12.3/s)  |  Answer: 30 tok (4.1/s)  |  Total: 180 tok (10.9/s)
+```
+
+This helps you monitor inference progress in real-time, showing how quickly the model is generating reasoning tokens versus visible answer tokens.
+
 ### Latency & Throughput
 - **TTFT** (Time to First Token) – Latency until the first content token arrives.
 - **Thinking-Ph.** – Duration of the reasoning/thinking phase.
