@@ -281,6 +281,9 @@ async def measure_request_streaming(client, model_name, prompt, request_id, max_
             cumulative_think_tokens = 0
             cumulative_answer_tokens = 0
             last_display_time = 0
+            cumulative_prompt_tokens = 0
+            cumulative_completion_tokens = 0
+            total_tokens_from_api = 0
             print(f"  [RETRY] Attempt {attempt}/{max_retries} after {((attempt - 1) * 2):.0f}s backoff...")
 
         try:
@@ -290,10 +293,14 @@ async def measure_request_streaming(client, model_name, prompt, request_id, max_
                     {"role": "system", "content": SYSTEM_PROMPT},
                     {"role": "user", "content": prompt + USER_PROMPT_SUFFIX}
                 ],
-                max_tokens=32768,
                 stream=True,
                 timeout=300.0
             )
+
+            # Track token usage from API (actual counts, not heuristics)
+            cumulative_prompt_tokens = 0
+            cumulative_completion_tokens = 0
+            total_tokens_from_api = 0
 
             async for chunk in response:
                 chunk_count += 1
@@ -330,15 +337,32 @@ async def measure_request_streaming(client, model_name, prompt, request_id, max_
                         if "���" in accumulated_content and first_answer_token_time is None:
                             first_answer_token_time = time.perf_counter()
 
+                # Extract actual token usage from the chunk (if the API provides it)
+                if hasattr(chunk, 'usage') and chunk.usage:
+                    cumulative_prompt_tokens = chunk.usage.prompt_tokens
+                    cumulative_completion_tokens = chunk.usage.completion_tokens
+                    total_tokens_from_api = chunk.usage.total_tokens
+
                 # Real-time tokens/sec display
                 now = time.perf_counter()
                 if now - last_display_time >= display_interval:
-                    cumulative_think_tokens = len(thinking_text) // 4
-                    cumulative_answer_tokens = len(answer_text) // 4
+                    # Use actual API token counts if available, otherwise fall back to heuristic
+                    if total_tokens_from_api > 0:
+                        # Proportionally split based on text lengths
+                        total_text_len = len(thinking_text) + len(answer_text)
+                        if total_text_len > 0:
+                            think_tokens = int(total_tokens_from_api * len(thinking_text) / total_text_len)
+                            ans_tokens = total_tokens_from_api - think_tokens
+                        else:
+                            think_tokens = 0
+                            ans_tokens = 0
+                    else:
+                        think_tokens = len(thinking_text) // 4
+                        ans_tokens = len(answer_text) // 4
                     elapsed = now - start_time
-                    think_tps = cumulative_think_tokens / elapsed if elapsed > 0 else 0
-                    answer_tps = cumulative_answer_tokens / elapsed if elapsed > 0 else 0
-                    print(f"  [STREAM] Think: {cumulative_think_tokens} tok ({think_tps:.1f}/s)  |  Answer: {cumulative_answer_tokens} tok ({answer_tps:.1f}/s)  |  Total: {cumulative_think_tokens + cumulative_answer_tokens} tok ({(cumulative_think_tokens + cumulative_answer_tokens)/elapsed:.1f}/s)", end="\r", flush=True)
+                    think_tps = think_tokens / elapsed if elapsed > 0 else 0
+                    answer_tps = ans_tokens / elapsed if elapsed > 0 else 0
+                    print(f"  [STREAM] Think: {think_tokens} tok ({think_tps:.1f}/s)  |  Answer: {ans_tokens} tok ({answer_tps:.1f}/s)  |  Total: {total_tokens_from_api} tok ({(total_tokens_from_api)/elapsed:.1f}/s)", end="\r", flush=True)
                     last_display_time = now
 
             end_time = time.perf_counter()
@@ -374,9 +398,19 @@ async def measure_request_streaming(client, model_name, prompt, request_id, max_
             answer_duration = end_time - first_answer_token_time
             generation_time = end_time - first_token_time if first_token_time else 0
 
-            # Calculate Tokens separately
-            reasoning_tokens = len(thinking_text) // 4
-            answer_tokens = len(answer_text) // 4
+            # Use actual token counts from API, or fall back to heuristic
+            if total_tokens_from_api > 0:
+                # Proportionally split based on text lengths
+                total_text_len = len(thinking_text) + len(answer_text)
+                if total_text_len > 0:
+                    reasoning_tokens = int(total_tokens_from_api * len(thinking_text) / total_text_len)
+                    answer_tokens = total_tokens_from_api - reasoning_tokens
+                else:
+                    reasoning_tokens = 0
+                    answer_tokens = 0
+            else:
+                reasoning_tokens = len(thinking_text) // 4
+                answer_tokens = len(answer_text) // 4
             total_tokens = reasoning_tokens + answer_tokens
 
             tps = (total_tokens / generation_time) if total_tokens > 0 and generation_time > 0 else 0
@@ -444,8 +478,18 @@ async def measure_request_streaming(client, model_name, prompt, request_id, max_
             answer_duration = end_time - partial_first_answer
             generation_time = end_time - partial_first_token if partial_first_token else 0
 
-            reasoning_tokens = len(partial_thinking_text) // 4
-            answer_tokens = len(partial_answer_text) // 4
+            # Use actual token counts from API, or fall back to heuristic
+            if total_tokens_from_api > 0:
+                total_text_len = len(partial_thinking_text) + len(partial_answer_text)
+                if total_text_len > 0:
+                    reasoning_tokens = int(total_tokens_from_api * len(partial_thinking_text) / total_text_len)
+                    answer_tokens = total_tokens_from_api - reasoning_tokens
+                else:
+                    reasoning_tokens = 0
+                    answer_tokens = 0
+            else:
+                reasoning_tokens = len(partial_thinking_text) // 4
+                answer_tokens = len(partial_answer_text) // 4
             total_tokens = reasoning_tokens + answer_tokens
 
             tps = (total_tokens / generation_time) if total_tokens > 0 and generation_time > 0 else 0
