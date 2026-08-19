@@ -122,4 +122,3 @@ fi
 
 # Exit venv
 deactivate
-echo "Benchmark finished."
