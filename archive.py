@@ -402,6 +402,13 @@ def get_run(run_id):
             "generation_tps": result[15]
         })
     
+    # Calculate average total latency
+    if run_data["results"]:
+        avg_total_latency = sum(r["total_latency"] for r in run_data["results"]) / len(run_data["results"])
+        run_data["avg_total_latency"] = avg_total_latency
+    else:
+        run_data["avg_total_latency"] = 0
+    
     return run_data
 
 def compare_runs(run_id_1, run_id_2):
@@ -420,6 +427,7 @@ def compare_runs(run_id_1, run_id_2):
             "model": run1["model"],
             "accuracy": run1["accuracy"],
             "avg_ttft": run1["avg_ttft"],
+            "avg_total_latency": run1.get("avg_total_latency", 0),
             "avg_tps": run1["avg_tps"],
             "avg_prefill_tps": run1["avg_prefill_tps"],
             "avg_generation_tps": run1["avg_generation_tps"],
@@ -432,6 +440,7 @@ def compare_runs(run_id_1, run_id_2):
             "model": run2["model"],
             "accuracy": run2["accuracy"],
             "avg_ttft": run2["avg_ttft"],
+            "avg_total_latency": run2.get("avg_total_latency", 0),
             "avg_tps": run2["avg_tps"],
             "avg_prefill_tps": run2["avg_prefill_tps"],
             "avg_generation_tps": run2["avg_generation_tps"],
@@ -444,6 +453,7 @@ def compare_runs(run_id_1, run_id_2):
                 else None
             ),
             "ttft_delta": run2["avg_ttft"] - run1["avg_ttft"],
+            "latency_delta": (run2.get("avg_total_latency", 0) - run1.get("avg_total_latency", 0)),
             "tps_delta": run2["avg_tps"] - run1["avg_tps"],
         },
         "detailed_results": []

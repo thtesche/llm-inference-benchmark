@@ -53,6 +53,7 @@ def print_run_details(run):
     accuracy = f"{run['accuracy']*100:.1f}%" if run.get('accuracy') is not None else "n/a (not auto-gradable)"
     print(f"\nAccuracy: {accuracy} ({run['total_correct']}/{run['total_problems']})")
     print(f"Avg TTFT: {format_time(run['avg_ttft'])} (first stream chunk; prefix cache hit)")
+    print(f"Avg Elapsed Time: {format_time(run.get('avg_total_latency') or 0)}")
     print(f"Prefill TPS: {run.get('avg_prefill_tps') or 0:.1f} | Generation TPS: {run.get('avg_generation_tps') or 0:.1f} "
           f"| Avg Context: {run.get('avg_context_tokens') or 0:,} tokens\n")
 
@@ -116,6 +117,11 @@ def print_comparison(comparison):
     ttft2 = format_time(run2['avg_ttft'])
     ttft_delta = f"{diff['ttft_delta']:+.3f}s"
     print(f"{'Avg TTFT':<20} {ttft1:<25} {ttft2:<25} {ttft_delta:<20}")
+    
+    latency1 = format_time(run1.get('avg_total_latency') or 0)
+    latency2 = format_time(run2.get('avg_total_latency') or 0)
+    latency_delta = f"{(run2.get('avg_total_latency') or 0) - (run1.get('avg_total_latency') or 0):+.2f}s"
+    print(f"{'Avg Elapsed Time':<20} {latency1:<25} {latency2:<25} {latency_delta:<20}")
     
     print(f"\nServer: {run1['server_type']} → {run2['server_type']}")
     print(f"Model: {run1['model']} → {run2['model']}")

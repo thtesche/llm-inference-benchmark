@@ -113,6 +113,14 @@ function displayComparison(comparison) {
             </td>
         </tr>
         <tr>
+            <td><strong>Avg Elapsed Time</strong></td>
+            <td>${formatTime(run1.avg_total_latency)}</td>
+            <td>${formatTime(run2.avg_total_latency)}</td>
+            <td class="${diff.latency_delta <= 0 ? 'delta-positive' : 'delta-negative'}">
+                ${diff.latency_delta >= 0 ? '+' : ''}${diff.latency_delta.toFixed(2)}s
+            </td>
+        </tr>
+        <tr>
             <td><strong>Prefill TPS</strong></td>
             <td>${run1.avg_prefill_tps.toFixed(1)}</td>
             <td>${run2.avg_prefill_tps.toFixed(1)}</td>
