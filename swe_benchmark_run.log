@@ -1,0 +1,11 @@
+Querying server for actively loaded models...
+[INFO] Model successfully detected: 'qwen3.8-flash-next-q2_0'
+[INFO] Using SWE-ContextBench (large contexts)
+
+=== AIME Prompt ID: swe-med-01 (Pos 1) ===
+Problem: #!/usr/bin/env python3
+# Medium-sized codebase context for benchmarking
+# ~20,00...
+Expected: Performance analysis and optimization suggestions.
+--------------------------------------------------
+  [STREAM] Think: 0 tok (0.0/s)  |  Answer: 0 tok (0.0/s)  |  Total: 0 tok (0.0/s)                                       
