@@ -213,7 +213,9 @@ def print_statistics(results):
 
 
 PROMPTS_FILE = "prompts/aime_2026.jsonl"
+SWE_PROMPTS_FILE = "prompts/swe_context_sample.jsonl"
 DEBUG_HELLO = False
+BENCHMARK_MODE = "aime"  # "aime" for small or "swe" for large contexts
 
 def load_prompts(filepath):
     """Loads all prompt entries from the provided JSONL file."""
@@ -566,7 +568,7 @@ async def measure_request(client, model_name, prompt, request_id):
     return result
 
 
-async def run_benchmark(url, api_key, id_selection, verbose=False, server_type=None, notes=None):
+async def run_benchmark(url, api_key, id_selection, verbose=False, server_type=None, notes=None, benchmark_mode="aime"):
     """Main function to discover models, load prompts, and run the evaluation sequence."""
     client = AsyncOpenAI(base_url=url, api_key=api_key)
 
@@ -580,7 +582,15 @@ async def run_benchmark(url, api_key, id_selection, verbose=False, server_type=N
     except Exception as e:
         print(f"[WARN] API model query failed ({e}). Using script fallback standard.")
 
-    prompts = load_prompts(PROMPTS_FILE)
+    # Select benchmark type
+    if benchmark_mode == "swe":
+        prompts_file = SWE_PROMPTS_FILE
+        print(f"[INFO] Using SWE-ContextBench (large contexts)")
+    else:
+        prompts_file = PROMPTS_FILE
+        print(f"[INFO] Using AIME benchmark (small contexts)")
+    
+    prompts = load_prompts(prompts_file)
     indices = parse_id_selection(id_selection)
 
     if indices is None:
@@ -604,8 +614,17 @@ async def run_benchmark(url, api_key, id_selection, verbose=False, server_type=N
             problem = "According to Douglas Adams' The Hitchhiker's Guide to the Galaxy, what is the ultimate answer to the ultimate question of life? Provide just the number."
             expected_answer = "42"
         else:
-            problem = prompt_data["problem"]
-            expected_answer = prompt_data.get("answer", "N/A")
+            # Support both AIME ("problem") and SWE ("task" + "context")
+            if "problem" in prompt_data:
+                # AIME format
+                problem = prompt_data["problem"]
+                expected_answer = prompt_data.get("answer", "N/A")
+            elif "task" in prompt_data and "context" in prompt_data:
+                # SWE format (context + task)
+                problem = f"{prompt_data['context']}\n\nTask: {prompt_data['task']}"
+                expected_answer = prompt_data.get("expected_output", "N/A")
+            else:
+                raise ValueError(f"Unknown prompt format in {prompt_data}")
 
         print(f"\n=== AIME Prompt ID: {prompt_data['id']} (Pos {prompt_index}) ===")
         print(f"Problem: {problem[:80]}...")
@@ -633,14 +652,16 @@ async def run_benchmark(url, api_key, id_selection, verbose=False, server_type=N
     print(f"[INFO] Backup saved to: benchmark_data/run_*.json")
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Run AIME API benchmark.")
+    parser = argparse.ArgumentParser(description="Run LLM inference benchmark (AIME or SWE-Context).")
     parser.add_argument("--url", type=str, required=True, help="API base URL")
     parser.add_argument("--key", type=str, required=True, help="API key")
     parser.add_argument("--id", type=str, help="Prompt IDs (e.g., '1-3', '6 8 10')")
     parser.add_argument("--verbose", action="store_true", help="Enable verbose output")
     parser.add_argument("--server-type", type=str, help="Server type (e.g., 'llama.cpp', 'vllm')")
     parser.add_argument("--notes", type=str, help="Notes for this run")
+    parser.add_argument("--benchmark", type=str, default="aime", choices=["aime", "swe"],
+                       help="Benchmark type: 'aime' for small contexts, 'swe' for large contexts (default: aime)")
 
     args = parser.parse_args()
 
-    asyncio.run(run_benchmark(args.url, args.key, args.id, args.verbose, args.server_type, args.notes))
+    asyncio.run(run_benchmark(args.url, args.key, args.id, args.verbose, args.server_type, args.notes, args.benchmark))
