@@ -90,7 +90,8 @@ if __name__ == '__main__':
     # Create templates directory if it doesn't exist
     Path('templates').mkdir(exist_ok=True)
     
-    print("Starting web app on http://localhost:5000")
+    port = 8888
+    print(f"Starting web app on http://localhost:{port}")
     print("Press Ctrl+C to stop")
     
-    app.run(debug=False, host='localhost', port=5000, open_browser=True)
+    app.run(debug=False, host='localhost', port=port)

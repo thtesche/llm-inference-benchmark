@@ -101,6 +101,8 @@ def print_statistics(results):
     ttfts = [r["ttft"] for r in results if "ttft" in r]
     latencies = [r["total_latency"] for r in results if "total_latency" in r]
     tps_values = [r["tps"] for r in results if r.get("tps", 0) > 0]
+    prefill_tps_values = [r["prefill_tps"] for r in results if r.get("prefill_tps", 0) > 0]
+    generation_tps_values = [r["generation_tps"] for r in results if r.get("generation_tps", 0) > 0]
     think_times = [r["reasoning_time"] for r in results if "reasoning_time" in r]
     answer_times = [r["answer_time"] for r in results if "answer_time" in r]
     ratios = [r["thinking_ratio"] for r in results if "thinking_ratio" in r]
@@ -109,21 +111,21 @@ def print_statistics(results):
     answer_tokens_list = [r["answer_tokens"] for r in results if "answer_tokens" in r]
     total_tokens_list = [r["tokens"] for r in results if "tokens" in r]
 
-    print("\n" + "="*115)
-    print("="*115)
+    print("\n" + "="*140)
+    print("="*140)
     print("  ADVANCED STATISTICS & PERFORMANCE SUMMARY")
-    print("="*115)
+    print("="*140)
 
-    # Unified layout template for perfect vertical column alignment (expanded for tokens)
-    ROW_FMT = "  {id:<14} {status:<9} {exp:>5} {rec:>5} {ttft:>9} {think:>11} {answer:>11} {latency:>11} {tok_r:>7} {tok_a:>7} {tps:>6}"
+    # Unified layout template for perfect vertical column alignment (expanded for tokens + prefill/gen TPS)
+    ROW_FMT = "  {id:<14} {status:<9} {exp:>5} {rec:>5} {ttft:>9} {think:>11} {answer:>11} {latency:>11} {tok_r:>7} {tok_a:>7} {ptps:>7} {gtps:>7}"
 
     # --- Table Header ---
     print(ROW_FMT.format(
         id="ID", status="Status", exp="Exp", rec="Rec",
         ttft="TTFT", think="Think-Time", answer="Ans-Time",
-        latency="Latency", tok_r="Tok-R", tok_a="Tok-A", tps="TPS"
+        latency="Latency", tok_r="Tok-R", tok_a="Tok-A", ptps="Pref-TPS", gtps="Gen-TPS"
     ))
-    print("  " + "-"*111)
+    print("  " + "-"*136)
 
     # --- Table Rows ---
     for r in results:
@@ -150,11 +152,12 @@ def print_statistics(results):
             latency=format_time(r.get('total_latency', 0)),
             tok_r=r.get('reasoning_tokens', 0),
             tok_a=r.get('answer_tokens', 0),
-            tps=f"{r.get('tps', 0):.1f}" if r.get('tps', 0) > 0 else "0.0"
+            ptps=f"{r.get('prefill_tps', 0):.1f}" if r.get('prefill_tps', 0) > 0 else "0.0",
+            gtps=f"{r.get('generation_tps', 0):.1f}" if r.get('generation_tps', 0) > 0 else "0.0"
         ))
 
     # --- Summary Section ---
-    print("\n  " + "-"*111)
+    print("\n  " + "-"*136)
     print(f"  Total:  {total} tasks | {successful_count} successful | {failed} failed")
     if successful_count > 0:
         print(f"  Correct: {correct}/{successful_count} ({correct/successful_count*100:.1f}%)")
@@ -187,13 +190,25 @@ def print_statistics(results):
     if total_tokens_list:
         print(f"  Total Tokens - Min: {min(total_tokens_list):<9} | Max: {max(total_tokens_list):<9} | Avg: {int(sum(total_tokens_list)/len(total_tokens_list))}")
 
+    print()
+    # Throughput Statistics (Prefill vs Generation)
+    if prefill_tps_values:
+        min_ptps = f"{min(prefill_tps_values):.1f}"
+        max_ptps = f"{max(prefill_tps_values):.1f}"
+        avg_ptps = f"{sum(prefill_tps_values)/len(prefill_tps_values):.1f}"
+        print(f"  Prefill TPS  - Min: {min_ptps:<9} | Max: {max_ptps:<9} | Avg: {avg_ptps}")
+    if generation_tps_values:
+        min_gtps = f"{min(generation_tps_values):.1f}"
+        max_gtps = f"{max(generation_tps_values):.1f}"
+        avg_gtps = f"{sum(generation_tps_values)/len(generation_tps_values):.1f}"
+        print(f"  Generation TPS - Min: {min_gtps:<9} | Max: {max_gtps:<9} | Avg: {avg_gtps}")
     if tps_values:
         min_tps = f"{min(tps_values):.1f}"
         max_tps = f"{max(tps_values):.1f}"
         avg_tps = f"{sum(tps_values)/len(tps_values):.1f}"
         print(f"  Total TPS    - Min: {min_tps:<9} | Max: {max_tps:<9} | Avg: {avg_tps}")
         
-    print("="*115)
+    print("="*140)
     print("Benchmark finished.")
 
 
@@ -425,6 +440,11 @@ async def measure_request_streaming(client, model_name, prompt, request_id, max_
 
             tps = (total_tokens / generation_time) if total_tokens > 0 and generation_time > 0 else 0
             thinking_ratio = (reasoning_duration / total_latency * 100) if total_latency > 0 else 0
+            
+            # Prefill metrics (Prefill = TTFT phase, everything until first thinking token)
+            prefill_duration = ttft
+            prefill_tps = (reasoning_tokens / prefill_duration) if prefill_duration > 0 and reasoning_tokens > 0 else 0
+            generation_tps = (answer_tokens / answer_duration) if answer_duration > 0 and answer_tokens > 0 else 0
 
             return {
                 "id": request_id,
@@ -434,6 +454,8 @@ async def measure_request_streaming(client, model_name, prompt, request_id, max_
                 "answer_time": answer_duration,
                 "thinking_ratio": thinking_ratio,
                 "tps": tps,
+                "prefill_tps": prefill_tps,
+                "generation_tps": generation_tps,
                 "tokens": total_tokens,
                 "reasoning_tokens": reasoning_tokens,
                 "answer_tokens": answer_tokens,
@@ -504,6 +526,11 @@ async def measure_request_streaming(client, model_name, prompt, request_id, max_
 
             tps = (total_tokens / generation_time) if total_tokens > 0 and generation_time > 0 else 0
             thinking_ratio = (reasoning_duration / total_latency * 100) if total_latency > 0 else 0
+            
+            # Prefill metrics
+            prefill_duration = ttft
+            prefill_tps = (reasoning_tokens / prefill_duration) if prefill_duration > 0 and reasoning_tokens > 0 else 0
+            generation_tps = (answer_tokens / answer_duration) if answer_duration > 0 and answer_tokens > 0 else 0
 
             return {
                 "id": request_id,
@@ -513,6 +540,8 @@ async def measure_request_streaming(client, model_name, prompt, request_id, max_
                 "answer_time": answer_duration,
                 "thinking_ratio": thinking_ratio,
                 "tps": tps,
+                "prefill_tps": prefill_tps,
+                "generation_tps": generation_tps,
                 "tokens": total_tokens,
                 "reasoning_tokens": reasoning_tokens,
                 "answer_tokens": answer_tokens,

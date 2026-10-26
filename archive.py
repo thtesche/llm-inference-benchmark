@@ -50,6 +50,8 @@ def init_db():
             answer_tokens INTEGER,
             total_tokens INTEGER,
             tps REAL,
+            prefill_tps REAL,
+            generation_tps REAL,
             FOREIGN KEY(run_id) REFERENCES runs(id)
         )
     """)
@@ -124,8 +126,9 @@ def save_run(results, server_type, model, api_url, notes):
         cursor.execute("""
             INSERT INTO results
             (run_id, problem_id, position, expected, extracted, correct, ttft, reasoning_time, 
-             answer_time, total_latency, reasoning_tokens, answer_tokens, total_tokens, tps)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             answer_time, total_latency, reasoning_tokens, answer_tokens, total_tokens, tps,
+             prefill_tps, generation_tps)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             run_id,
             result.get("id"),
@@ -140,7 +143,9 @@ def save_run(results, server_type, model, api_url, notes):
             result.get("reasoning_tokens", 0),
             result.get("answer_tokens", 0),
             result.get("tokens", 0),
-            result.get("tps", 0)
+            result.get("tps", 0),
+            result.get("prefill_tps", 0),
+            result.get("generation_tps", 0)
         ))
     
     conn.commit()
@@ -263,7 +268,7 @@ def get_run(run_id):
     # Get individual results
     cursor.execute("""
         SELECT problem_id, position, expected, extracted, correct, ttft, reasoning_time, answer_time, 
-               total_latency, reasoning_tokens, answer_tokens, total_tokens, tps
+               total_latency, reasoning_tokens, answer_tokens, total_tokens, tps, prefill_tps, generation_tps
         FROM results
         WHERE run_id = ?
         ORDER BY position
@@ -301,7 +306,9 @@ def get_run(run_id):
             "reasoning_tokens": result[9],
             "answer_tokens": result[10],
             "total_tokens": result[11],
-            "tps": result[12]
+            "tps": result[12],
+            "prefill_tps": result[13],
+            "generation_tps": result[14]
         })
     
     return run_data
@@ -348,12 +355,16 @@ def compare_runs(run_id_1, run_id_2):
             "run_1": {
                 "correct": r1["correct"],
                 "ttft": r1["ttft"],
-                "tps": r1["tps"]
+                "tps": r1["tps"],
+                "prefill_tps": r1["prefill_tps"],
+                "generation_tps": r1["generation_tps"]
             },
             "run_2": {
                 "correct": r2["correct"],
                 "ttft": r2["ttft"],
-                "tps": r2["tps"]
+                "tps": r2["tps"],
+                "prefill_tps": r2["prefill_tps"],
+                "generation_tps": r2["generation_tps"]
             }
         })
     
