@@ -274,7 +274,7 @@ def parse_id_selection(id_arg):
     return None
 
 
-async def measure_request_streaming(client, model_name, prompt, request_id, input_context_tokens=0, max_retries=3):
+async def measure_request_streaming(client, model_name, prompt, request_id, input_context_tokens=0, max_retries=3, max_tokens=None):
     """Measures streaming response with retries and separates thinking from answering performance and token count.
     
     Displays real-time tokens/sec for thinking (reasoning) and answer phases during streaming.
@@ -314,7 +314,7 @@ async def measure_request_streaming(client, model_name, prompt, request_id, inpu
             print(f"  [RETRY] Attempt {attempt}/{max_retries} after {((attempt - 1) * 2):.0f}s backoff...")
 
         try:
-            response = await client.chat.completions.create(
+            request_kwargs = dict(
                 model=model_name,
                 messages=[
                     {"role": "system", "content": SYSTEM_PROMPT},
@@ -323,6 +323,10 @@ async def measure_request_streaming(client, model_name, prompt, request_id, inpu
                 stream=True,
                 timeout=300.0
             )
+            if max_tokens:
+                request_kwargs["max_tokens"] = max_tokens
+
+            response = await client.chat.completions.create(**request_kwargs)
 
             # Track token usage from API (actual counts, not heuristics)
             cumulative_prompt_tokens = 0
@@ -586,13 +590,13 @@ async def measure_request_streaming(client, model_name, prompt, request_id, inpu
 
 
 
-async def measure_request(client, model_name, prompt, request_id, input_context_tokens=0):
+async def measure_request(client, model_name, prompt, request_id, input_context_tokens=0, max_tokens=None):
     """Wraps the request with streaming and retry logic."""
-    result = await measure_request_streaming(client, model_name, prompt, request_id, input_context_tokens)
+    result = await measure_request_streaming(client, model_name, prompt, request_id, input_context_tokens, max_tokens=max_tokens)
     return result
 
 
-async def run_benchmark(url, api_key, id_selection, verbose=False, server_type=None, notes=None, benchmark_mode="aime"):
+async def run_benchmark(url, api_key, id_selection, verbose=False, server_type=None, notes=None, benchmark_mode="aime", max_tokens=None):
     """Main function to discover models, load prompts, and run the evaluation sequence."""
     client = AsyncOpenAI(base_url=url, api_key=api_key)
 
@@ -657,7 +661,7 @@ async def run_benchmark(url, api_key, id_selection, verbose=False, server_type=N
 
         # Extract input context tokens from prompt data
         input_context_tokens = prompt_data.get('context_tokens', 0)
-        result = await measure_request(client, model_name, problem, prompt_data['id'], input_context_tokens)
+        result = await measure_request(client, model_name, problem, prompt_data['id'], input_context_tokens, max_tokens=max_tokens)
         result["expected_answer"] = expected_answer
         result["position"] = prompt_index
         results.append(result)
@@ -687,7 +691,10 @@ if __name__ == "__main__":
     parser.add_argument("--notes", type=str, help="Notes for this run")
     parser.add_argument("--benchmark", type=str, default="aime", choices=["aime", "swe"],
                        help="Benchmark type: 'aime' for small contexts, 'swe' for large contexts (default: aime)")
+    parser.add_argument("--max-tokens", type=int, default=None,
+                       help="Cap on generated tokens (reasoning + answer). Default: unlimited. "
+                            "Use it to stop runaway reasoning loops.")
 
     args = parser.parse_args()
 
-    asyncio.run(run_benchmark(args.url, args.key, args.id, args.verbose, args.server_type, args.notes, args.benchmark))
+    asyncio.run(run_benchmark(args.url, args.key, args.id, args.verbose, args.server_type, args.notes, args.benchmark, args.max_tokens))
