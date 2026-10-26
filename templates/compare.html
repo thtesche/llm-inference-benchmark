@@ -58,7 +58,6 @@
                     <th>Run 2 Correct</th>
                     <th>Status</th>
                     <th>TTFT Δ</th>
-                    <th>TPS Δ</th>
                     <th>Prefill Δ</th>
                     <th>Gen Δ</th>
                 </tr>
@@ -114,14 +113,6 @@ function displayComparison(comparison) {
             </td>
         </tr>
         <tr>
-            <td><strong>Avg TPS</strong></td>
-            <td>${run1.avg_tps.toFixed(1)}</td>
-            <td>${run2.avg_tps.toFixed(1)}</td>
-            <td class="${diff.tps_delta >= 0 ? 'delta-positive' : 'delta-negative'}">
-                ${diff.tps_delta >= 0 ? '+' : ''}${diff.tps_delta.toFixed(1)}
-            </td>
-        </tr>
-        <tr>
             <td><strong>Prefill TPS</strong></td>
             <td>${run1.avg_prefill_tps.toFixed(1)}</td>
             <td>${run2.avg_prefill_tps.toFixed(1)}</td>
@@ -164,9 +155,6 @@ function displayComparison(comparison) {
             <td>${detail.run_1.correct === null || detail.run_2.correct === null ? '—' : (detail.run_1.correct === detail.run_2.correct ? '→' : detail.run_1.correct ? '↓' : '↑')}</td>
             <td class="${detail.run_2.ttft - detail.run_1.ttft <= 0 ? 'delta-positive' : 'delta-negative'}">
                 ${(detail.run_2.ttft - detail.run_1.ttft >= 0 ? '+' : '')}${(detail.run_2.ttft - detail.run_1.ttft).toFixed(2)}s
-            </td>
-            <td class="${detail.run_2.tps - detail.run_1.tps >= 0 ? 'delta-positive' : 'delta-negative'}">
-                ${(detail.run_2.tps - detail.run_1.tps >= 0 ? '+' : '')}${(detail.run_2.tps - detail.run_1.tps).toFixed(1)}
             </td>
             <td class="${(detail.run_2.prefill_tps || 0) - (detail.run_1.prefill_tps || 0) >= 0 ? 'delta-positive' : 'delta-negative'}">
                 ${((detail.run_2.prefill_tps || 0) - (detail.run_1.prefill_tps || 0) >= 0 ? '+' : '')}${((detail.run_2.prefill_tps || 0) - (detail.run_1.prefill_tps || 0)).toFixed(1)}

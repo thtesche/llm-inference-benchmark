@@ -38,10 +38,7 @@
                     {{ (run.avg_ttft // 60)|int }}m {{ "%.2f"|format(run.avg_ttft % 60) }}s
                 {% endif %}
             </div>
-        </div>
-        <div class="stat-card">
-            <div class="stat-label">Avg TPS</div>
-            <div class="stat-value">{{ "%.1f"|format(run.avg_tps) }}</div>
+            <div style="font-size: 0.8em; color: #888;">first stream chunk (prefix cache)</div>
         </div>
         <div class="stat-card">
             <div class="stat-label">Prefill TPS</div>
@@ -69,11 +66,10 @@
                 <th>Received</th>
                 <th>Status</th>
                 <th>TTFT</th>
-                <th>Thinking</th>
+                <th>Prefill</th>
                 <th>Answer</th>
                 <th>Total</th>
                 <th>Tokens</th>
-                <th>TPS</th>
                 <th>Ctx Tok</th>
                 <th>Prefill TPS</th>
                 <th>Gen TPS</th>
@@ -134,7 +130,6 @@
                     {% endif %}
                 </td>
                 <td>{{ result.total_tokens }}</td>
-                <td>{{ "%.1f"|format(result.tps) }}</td>
                 <td>
                     {% if result.input_context_tokens %}{{ "{:,}".format(result.input_context_tokens) }}{% else %}—{% endif %}
                 </td>

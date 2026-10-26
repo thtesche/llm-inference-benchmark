@@ -124,7 +124,9 @@ python compare.py --list [--limit N] [--server-type TYPE] [--json]
 ```
 
 `accuracy` is `null` when the run contains only free-text tasks (e.g. SWE), which
-cannot be auto-graded. `avg_prefill_tps` / `avg_generation_tps` /
+cannot be auto-graded. `avg_tps`, `tps` and `tps_delta` are kept for compatibility
+only: they mix prefill and generation into one number. Use
+`avg_prefill_tps` / `avg_generation_tps` instead. `avg_prefill_tps` / `avg_generation_tps` /
 `avg_context_tokens` are the large-context metrics described in
 `SWE_BENCHMARKING.md`.
 
@@ -160,9 +162,9 @@ python compare.py --run-1 <id> --run-2 <id> [--json]
 
 ### Output (Default: Table)
 Shows side-by-side metrics and per-problem differences:
-- Accuracy delta (+ = improvement)
+- Accuracy delta (+ = improvement, `—` when tasks are not auto-gradable)
 - TTFT delta (- = improvement)
-- TPS delta (+ = improvement)
+- Prefill TPS / Generation TPS / Context tokens with deltas
 - Problem-by-problem comparison with ✓/✗ and deltas
 
 ### Output (JSON)
@@ -195,8 +197,8 @@ Shows side-by-side metrics and per-problem differences:
     {
       "position": 1,
       "problem_id": "2026-I-1",
-      "run_1": {"correct": true, "ttft": 3.2, "tps": 11.8, "prefill_tps": 336.0, "generation_tps": 33.5},
-      "run_2": {"correct": true, "ttft": 3.17, "tps": 11.9, "prefill_tps": 338.2, "generation_tps": 34.5}
+      "run_1": {"correct": true, "ttft": 3.2, "prefill_tps": 336.0, "generation_tps": 33.5, "tps": 11.8},
+      "run_2": {"correct": true, "ttft": 3.17, "prefill_tps": 338.2, "generation_tps": 34.5, "tps": 11.9}
     }
   ]
 }
@@ -351,6 +353,7 @@ Each run is automatically saved as `benchmark_data/run_YYYYMMDD_HHMMSS.json`:
       "reasoning_tokens": 1776,
       "answer_tokens": 1584,
       "tps": 11.5,
+      "prefill_ratio": 63.2,
       "prefill_tps": 338.2,
       "generation_tps": 34.5
     }

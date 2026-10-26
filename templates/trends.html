@@ -12,13 +12,6 @@
     </div>
     
     <div style="margin-bottom: 30px;">
-        <h2>TPS Over Time</h2>
-        <div class="chart-container">
-            <canvas id="tpsChart" height="80"></canvas>
-        </div>
-    </div>
-    
-    <div style="margin-bottom: 30px;">
         <h2>Prefill vs Generation TPS</h2>
         <div class="chart-container">
             <canvas id="phaseChart" height="80"></canvas>
@@ -91,39 +84,6 @@ async function loadTrends() {
                         beginAtZero: true,
                         max: 100,
                         title: { display: true, text: 'Accuracy (%)' }
-                    }
-                }
-            }
-        });
-        
-        // TPS chart
-        new Chart(document.getElementById('tpsChart'), {
-            type: 'line',
-            data: {
-                labels: sortedRuns.map((r, i) => `Run ${r.id}`),
-                datasets: [{
-                    label: 'TPS',
-                    data: sortedRuns.map(r => r.avg_tps.toFixed(1)),
-                    borderColor: colors[1],
-                    backgroundColor: 'rgba(34, 197, 94, 0.1)',
-                    fill: true,
-                    tension: 0.4,
-                    pointRadius: 5,
-                    pointBackgroundColor: colors[1],
-                    pointBorderColor: '#fff',
-                    pointBorderWidth: 2
-                }]
-            },
-            options: {
-                responsive: true,
-                plugins: {
-                    legend: { display: true, position: 'top' },
-                    title: { display: false }
-                },
-                scales: {
-                    y: {
-                        beginAtZero: true,
-                        title: { display: true, text: 'Tokens per Second' }
                     }
                 }
             }

@@ -43,24 +43,33 @@ The benchmark provides a detailed performance summary:
 
 ### Real-Time Streaming Display
 
-During streaming, the benchmark displays live tokens/sec for both the thinking (reasoning) and answer phases every 0.5 seconds:
+During streaming, the benchmark displays live tokens/sec for the prefill/thinking phase and the answer phase every 0.5 seconds:
 
 ```
-  [STREAM] Think: 150 tok (12.3/s)  |  Answer: 30 tok (4.1/s)  |  Total: 180 tok (10.9/s)
+  [STREAM] Prefill: 150 tok (12.3/s)  |  Answer: 30 tok (4.1/s)  |  Total: 180 tok (10.9/s)
 ```
 
-This helps you monitor inference progress in real-time, showing how quickly the model is generating reasoning tokens versus visible answer tokens.
+This helps you monitor inference progress in real-time.
 
 ### Latency & Throughput
-- **TTFT** (Time to First Token) – Latency until the first content token arrives.
-- **Thinking-Ph.** – Duration of the reasoning/thinking phase.
-- **Answer-Ph.** – Duration of the visible answer generation phase.
+- **TTFT** (Time to First Token) – Latency until the first streamed chunk arrives. On a warm
+  server this is a prefix-cache hit (~0.1s) and therefore *not* a usable prefill measurement.
+- **Prefill** – The practical prefill phase: request start until the first *answer* token.
+  It is dominated by context processing (only ~2% of it is reasoning-token generation),
+  so `Prefill TPS = input context tokens / Prefill`.
+- **Answer-Ph.** – Duration of the visible answer generation phase
+  (`Generation TPS = answer tokens / Answer-Ph.`).
 - **Latency** – Total wall-clock time for the complete response.
-- **TPS** (Tokens Per Second) – Throughput based on actual completion token count from the server's usage report.
+- **Prefill TPS** – Input context throughput (server-reported `prompt_tokens` per prefill second).
+- **Generation TPS** – Answer decode throughput (server-reported `completion_tokens` per answer second).
+
+There is deliberately no single "TPS" number: averaging prefill and decode into one value
+hides exactly the difference you want to measure.
 
 ### Accuracy & Reasoning
 - **Answer Accuracy** – Extracted answer compared against the known correct value.
-- **Think-Ratio** – Percentage of total latency spent in the reasoning phase.
+  Free-text tasks (SWE) are not auto-gradable and report `n/a`.
+- **Prefill-Ratio** – Percentage of total latency spent in the prefill phase.
 
 ### Token Statistics
 - **Reason. Toks** – Number of reasoning/thinking tokens.
@@ -112,24 +121,26 @@ Opens http://localhost:5000 with:
 ===================================================================================================================
   ADVANCED STATISTICS & PERFORMANCE SUMMARY
 ===================================================================================================================
-  ID             Status      Exp   Rec      TTFT  Think-Time    Ans-Time     Latency   Tok-R   Tok-A    TPS
+  ID             Status      Exp   Rec      TTFT  Prefill       Ans-Time     Latency   Tok-R   Tok-A Pref-TPS Gen-TPS
   ---------------------------------------------------------------------------------------------------------------
-  2026-I-1       CORRECT      42    42     3.17s   2m 29.05s   2m 22.32s   4m 54.55s    1776    1584   11.5
+  2026-I-1       CORRECT      42    42     3.17s   2m 29.05s   2m 22.32s   4m 54.55s    1776    1584    338.2    34.5
 
   ---------------------------------------------------------------------------------------------------------------
   Total:  1 tasks | 1 successful | 0 failed
   Correct: 1/1 (100.0%)
 
   TTFT         - Min: 3.17s     | Max: 3.17s     | Avg: 3.17s
-  Thinking-Ph. - Min: 2m 29.05s | Max: 2m 29.05s | Avg: 2m 29.05s
+  Prefill-Ph.  - Min: 2m 29.05s | Max: 2m 29.05s | Avg: 2m 29.05s
   Answer-Ph.   - Min: 2m 22.32s | Max: 2m 22.32s | Avg: 2m 22.32s
   Full Latency - Min: 4m 54.55s | Max: 4m 54.55s | Avg: 4m 54.55s
-  Think-Ratio  - Min: 50.6%     | Max: 50.6%     | Avg: 50.6%
+  Prefill-Ratio - Min: 50.6%    | Max: 50.6%     | Avg: 50.6%
 
   Reason. Toks - Min: 1776      | Max: 1776      | Avg: 1776
   Answer Toks  - Min: 1584      | Max: 1584      | Avg: 1584
   Total Tokens - Min: 3360      | Max: 3360      | Avg: 3360
-  Total TPS    - Min: 11.5      | Max: 11.5      | Avg: 11.5
+
+  Prefill TPS  - Min: 338.2     | Max: 338.2     | Avg: 338.2
+  Generation TPS - Min: 34.5    | Max: 34.5      | Avg: 34.5
 ===================================================================================================================
 ```
 

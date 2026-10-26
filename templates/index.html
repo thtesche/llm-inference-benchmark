@@ -57,7 +57,6 @@
     {% if runs %}
     {% set graded_runs = runs|selectattr('accuracy', 'ne', none)|list %}
     {% set best_accuracy = graded_runs|map(attribute='accuracy')|max if graded_runs else none %}
-    {% set best_tps = runs|map(attribute='avg_tps')|max %}
     {% set avg_accuracy = (graded_runs|map(attribute='accuracy')|sum / graded_runs|length) if graded_runs else none %}
     
     <div class="stat-card">
@@ -67,11 +66,6 @@
         </div>
     </div>
     
-    <div class="stat-card">
-        <div class="stat-label">Best TPS</div>
-        <div class="stat-value">{{ "%.1f"|format(best_tps) }}</div>
-    </div>
-
     <div class="stat-card">
         <div class="stat-label">Best Prefill TPS</div>
         <div class="stat-value">{{ "%.1f"|format(runs|map(attribute='avg_prefill_tps')|max) }}</div>

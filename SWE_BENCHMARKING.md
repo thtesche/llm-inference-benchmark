@@ -114,7 +114,7 @@ Generation TPS - Min: 28.9      | Max: 45.0      | Avg: 38.1
 TTFT           - ~0.1s (prefix cache)
 Prefill TPS    - ~340 tok/s
 Generation TPS - ~34 tok/s
-Think-Ratio    - 60-75% (context processing dominates)
+Prefill-Ratio  - 60-75% (context processing dominates)
 ```
 
 SWE tasks have a free-text `expected_output`, so they cannot be auto-graded:

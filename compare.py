@@ -52,11 +52,11 @@ def print_run_details(run):
     
     accuracy = f"{run['accuracy']*100:.1f}%" if run.get('accuracy') is not None else "n/a (not auto-gradable)"
     print(f"\nAccuracy: {accuracy} ({run['total_correct']}/{run['total_problems']})")
-    print(f"Avg TTFT: {format_time(run['avg_ttft'])} | Avg TPS: {run['avg_tps']:.1f}")
+    print(f"Avg TTFT: {format_time(run['avg_ttft'])} (first stream chunk; prefix cache hit)")
     print(f"Prefill TPS: {run.get('avg_prefill_tps') or 0:.1f} | Generation TPS: {run.get('avg_generation_tps') or 0:.1f} "
           f"| Avg Context: {run.get('avg_context_tokens') or 0:,} tokens\n")
 
-    print("  Pos  Problem        Expected Received Correct  TTFT      Thinking   Answer     Total      Tokens   TPS     CtxTok   Pref-TPS Gen-TPS")
+    print("  Pos  Problem        Expected Received Correct  TTFT      Prefill    Answer     Total      Tokens   CtxTok   Pref-TPS Gen-TPS")
     print("-"*150)
     
     for result in run['results']:
@@ -70,12 +70,11 @@ def print_run_details(run):
         answer = format_time(result['answer_time'])
         total = format_time(result['total_latency'])
         tokens = result['total_tokens']
-        tps = f"{result['tps']:.1f}" if result['tps'] > 0 else "0.0"
         ctx = result.get('input_context_tokens') or 0
         pref = f"{result.get('prefill_tps') or 0:.1f}"
         gen = f"{result.get('generation_tps') or 0:.1f}"
 
-        print(f"  {pos:<3} {problem:<13} {expected:>8} {received:>8} {correct:>7} {ttft:>9} {think:>10} {answer:>10} {total:>10} {tokens:>7}  {tps:>5} {ctx:>8} {pref:>9} {gen:>7}")
+        print(f"  {pos:<3} {problem:<13} {expected:>8} {received:>8} {correct:>7} {ttft:>9} {think:>10} {answer:>10} {total:>10} {tokens:>7} {ctx:>8} {pref:>9} {gen:>7}")
 
     print("="*150)
 
@@ -118,11 +117,6 @@ def print_comparison(comparison):
     ttft_delta = f"{diff['ttft_delta']:+.3f}s"
     print(f"{'Avg TTFT':<20} {ttft1:<25} {ttft2:<25} {ttft_delta:<20}")
     
-    tps1 = f"{run1['avg_tps']:.1f}"
-    tps2 = f"{run2['avg_tps']:.1f}"
-    tps_delta = f"{diff['tps_delta']:+.1f}"
-    print(f"{'Avg TPS':<20} {tps1:<25} {tps2:<25} {tps_delta:<20}")
-    
     print(f"\nServer: {run1['server_type']} → {run2['server_type']}")
     print(f"Model: {run1['model']} → {run2['model']}")
     print(f"Timestamp: {run1['timestamp']} → {run2['timestamp']}")
@@ -130,7 +124,7 @@ def print_comparison(comparison):
     print("\n" + "="*140)
     print("DETAILED PROBLEM COMPARISON")
     print("="*140)
-    print("  Pos  Problem        Run 1      Run 2      Correct  TTFT Δ       TPS Δ")
+    print("  Pos  Problem        Run 1      Run 2      Correct  TTFT Δ")
     print("-"*140)
     
     for detail in comparison['detailed_results']:
@@ -146,9 +140,8 @@ def print_comparison(comparison):
         else:
             correct_emoji = "✓" if detail['run_1']['correct'] == detail['run_2']['correct'] else "△"
         ttft_delta = f"{detail['run_2']['ttft'] - detail['run_1']['ttft']:+.2f}s"
-        tps_delta = f"{detail['run_2']['tps'] - detail['run_1']['tps']:+.1f}"
         
-        print(f"  {pos:<3} {problem:<13} {r1_correct:<9} {r2_correct:<9} {correct_emoji:>7} {ttft_delta:>12} {tps_delta:>8}")
+        print(f"  {pos:<3} {problem:<13} {r1_correct:<9} {r2_correct:<9} {correct_emoji:>7} {ttft_delta:>12}")
     
     print("="*140)
 

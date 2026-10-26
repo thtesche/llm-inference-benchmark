@@ -133,7 +133,7 @@ def print_statistics(results):
     # --- Table Header ---
     print(ROW_FMT.format(
         id="ID", status="Status", exp="Exp", rec="Rec",
-        ttft="TTFT", think="Think-Time", answer="Ans-Time",
+        ttft="TTFT", think="Prefill", answer="Ans-Time",
         latency="Latency", tok_r="Tok-R", tok_a="Tok-A", ptps="Pref-TPS", gtps="Gen-TPS"
     ))
     print("  " + "-"*136)
@@ -184,7 +184,7 @@ def print_statistics(results):
     if ttfts:
         print(f"  TTFT         - Min: {format_time(min(ttfts)):<9} | Max: {format_time(max(ttfts)):<9} | Avg: {format_time(sum(ttfts)/len(ttfts))}")
     if think_times:
-        print(f"  Thinking-Ph. - Min: {format_time(min(think_times)):<9} | Max: {format_time(max(think_times)):<9} | Avg: {format_time(sum(think_times)/len(think_times))}")
+        print(f"  Prefill-Ph.  - Min: {format_time(min(think_times)):<9} | Max: {format_time(max(think_times)):<9} | Avg: {format_time(sum(think_times)/len(think_times))}")
     if answer_times:
         print(f"  Answer-Ph.   - Min: {format_time(min(answer_times)):<9} | Max: {format_time(max(answer_times)):<9} | Avg: {format_time(sum(answer_times)/len(answer_times))}")
     if latencies:
@@ -194,7 +194,7 @@ def print_statistics(results):
         min_rat = f"{min(ratios):.1f}%"
         max_rat = f"{max(ratios):.1f}%"
         avg_rat = f"{sum(ratios)/len(ratios):.1f}%"
-        print(f"  Think-Ratio  - Min: {min_rat:<9} | Max: {max_rat:<9} | Avg: {avg_rat}")
+        print(f"  Prefill-Ratio - Min: {min_rat:<9} | Max: {max_rat:<9} | Avg: {avg_rat}")
         
     print()
     # Token Statistics
@@ -217,11 +217,6 @@ def print_statistics(results):
         max_gtps = f"{max(generation_tps_values):.1f}"
         avg_gtps = f"{sum(generation_tps_values)/len(generation_tps_values):.1f}"
         print(f"  Generation TPS - Min: {min_gtps:<9} | Max: {max_gtps:<9} | Avg: {avg_gtps}")
-    if tps_values:
-        min_tps = f"{min(tps_values):.1f}"
-        max_tps = f"{max(tps_values):.1f}"
-        avg_tps = f"{sum(tps_values)/len(tps_values):.1f}"
-        print(f"  Total TPS    - Min: {min_tps:<9} | Max: {max_tps:<9} | Avg: {avg_tps}")
         
     print("="*140)
     print("Benchmark finished.")
@@ -400,7 +395,7 @@ async def measure_request_streaming(client, model_name, prompt, request_id, inpu
                     total_tokens = think_tokens + ans_tokens
                     total_tps = total_tokens / elapsed_think if elapsed_think > 0 else 0
                     # Overwrite line in-place; pad with spaces to clear old trailing chars
-                    line = f"  [STREAM] Think: {think_tokens} tok ({think_tps:.1f}/s)  |  Answer: {ans_tokens} tok ({answer_tps:.1f}/s)  |  Total: {total_tokens} tok ({total_tps:.1f}/s)"
+                    line = f"  [STREAM] Prefill: {think_tokens} tok ({think_tps:.1f}/s)  |  Answer: {ans_tokens} tok ({answer_tps:.1f}/s)  |  Total: {total_tokens} tok ({total_tps:.1f}/s)"
                     print(f"\r{line:<120} ", end="", flush=True)
                     last_display_time = now
 
@@ -475,6 +470,7 @@ async def measure_request_streaming(client, model_name, prompt, request_id, inpu
                 "reasoning_time": reasoning_duration,
                 "answer_time": answer_duration,
                 "thinking_ratio": thinking_ratio,
+                "prefill_ratio": thinking_ratio,
                 "tps": tps,
                 "prefill_tps": prefill_tps,
                 "generation_tps": generation_tps,
@@ -567,6 +563,7 @@ async def measure_request_streaming(client, model_name, prompt, request_id, inpu
                 "reasoning_time": reasoning_duration,
                 "answer_time": answer_duration,
                 "thinking_ratio": thinking_ratio,
+                "prefill_ratio": thinking_ratio,
                 "tps": tps,
                 "prefill_tps": prefill_tps,
                 "generation_tps": generation_tps,
