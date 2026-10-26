@@ -449,10 +449,8 @@ async def measure_request_streaming(client, model_name, prompt, request_id, inpu
             prefill_tps = (input_context_tokens / prefill_duration) if prefill_duration > 0 and input_context_tokens > 0 else 0
             
             # Generation metrics: Like Strata's DECODE T/S (output token generation)
-            # All output tokens (thinking + answer) divided by total generation time
-            total_output_tokens = reasoning_tokens + answer_tokens
-            generation_duration = generation_time if generation_time > 0 else reasoning_duration + answer_duration
-            generation_tps = (total_output_tokens / generation_duration) if generation_duration > 0 and total_output_tokens > 0 else 0
+            # Only answer tokens during answer phase (not thinking tokens)
+            generation_tps = (answer_tokens / answer_duration) if answer_duration > 0 and answer_tokens > 0 else 0
 
             return {
                 "id": request_id,
@@ -540,10 +538,8 @@ async def measure_request_streaming(client, model_name, prompt, request_id, inpu
             prefill_duration = reasoning_duration if reasoning_duration > 0 else ttft
             prefill_tps = (input_context_tokens / prefill_duration) if prefill_duration > 0 and input_context_tokens > 0 else 0
             
-            # Generation metrics: All output tokens over generation time
-            total_output_tokens = reasoning_tokens + answer_tokens
-            generation_duration = generation_time if generation_time > 0 else reasoning_duration + answer_duration
-            generation_tps = (total_output_tokens / generation_duration) if generation_duration > 0 and total_output_tokens > 0 else 0
+            # Generation metrics: Only answer tokens during answer phase
+            generation_tps = (answer_tokens / answer_duration) if answer_duration > 0 and answer_tokens > 0 else 0
 
             return {
                 "id": request_id,
