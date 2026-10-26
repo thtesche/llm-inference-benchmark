@@ -8,3 +8,9 @@ venv/
 runs.db
 benchmark_data/
 *.db
+
+# Logs
+*.log
+
+# Tooling artifacts
+.openchamber/
