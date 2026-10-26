@@ -264,7 +264,7 @@ def parse_id_selection(id_arg):
     return None
 
 
-async def measure_request_streaming(client, model_name, prompt, request_id, max_retries=3):
+async def measure_request_streaming(client, model_name, prompt, request_id, input_context_tokens=0, max_retries=3):
     """Measures streaming response with retries and separates thinking from answering performance and token count.
     
     Displays real-time tokens/sec for thinking (reasoning) and answer phases during streaming.
@@ -443,10 +443,16 @@ async def measure_request_streaming(client, model_name, prompt, request_id, max_
             tps = (total_tokens / generation_time) if total_tokens > 0 and generation_time > 0 else 0
             thinking_ratio = (reasoning_duration / total_latency * 100) if total_latency > 0 else 0
             
-            # Prefill metrics (Prefill = TTFT phase, everything until first thinking token)
-            prefill_duration = ttft
-            prefill_tps = (reasoning_tokens / prefill_duration) if prefill_duration > 0 and reasoning_tokens > 0 else 0
-            generation_tps = (answer_tokens / answer_duration) if answer_duration > 0 and answer_tokens > 0 else 0
+            # Prefill metrics: Like Strata's PREFILL T/S (input context processing)
+            # Prefill phase = time until answer generation starts (reasoning_duration)
+            prefill_duration = reasoning_duration if reasoning_duration > 0 else ttft
+            prefill_tps = (input_context_tokens / prefill_duration) if prefill_duration > 0 and input_context_tokens > 0 else 0
+            
+            # Generation metrics: Like Strata's DECODE T/S (output token generation)
+            # All output tokens (thinking + answer) divided by total generation time
+            total_output_tokens = reasoning_tokens + answer_tokens
+            generation_duration = generation_time if generation_time > 0 else reasoning_duration + answer_duration
+            generation_tps = (total_output_tokens / generation_duration) if generation_duration > 0 and total_output_tokens > 0 else 0
 
             return {
                 "id": request_id,
@@ -459,6 +465,7 @@ async def measure_request_streaming(client, model_name, prompt, request_id, max_
                 "prefill_tps": prefill_tps,
                 "generation_tps": generation_tps,
                 "tokens": total_tokens,
+                "input_context_tokens": input_context_tokens,
                 "reasoning_tokens": reasoning_tokens,
                 "answer_tokens": answer_tokens,
                 "success": True,
@@ -529,10 +536,14 @@ async def measure_request_streaming(client, model_name, prompt, request_id, max_
             tps = (total_tokens / generation_time) if total_tokens > 0 and generation_time > 0 else 0
             thinking_ratio = (reasoning_duration / total_latency * 100) if total_latency > 0 else 0
             
-            # Prefill metrics
-            prefill_duration = ttft
-            prefill_tps = (reasoning_tokens / prefill_duration) if prefill_duration > 0 and reasoning_tokens > 0 else 0
-            generation_tps = (answer_tokens / answer_duration) if answer_duration > 0 and answer_tokens > 0 else 0
+            # Prefill metrics: Like Strata (input context processing)
+            prefill_duration = reasoning_duration if reasoning_duration > 0 else ttft
+            prefill_tps = (input_context_tokens / prefill_duration) if prefill_duration > 0 and input_context_tokens > 0 else 0
+            
+            # Generation metrics: All output tokens over generation time
+            total_output_tokens = reasoning_tokens + answer_tokens
+            generation_duration = generation_time if generation_time > 0 else reasoning_duration + answer_duration
+            generation_tps = (total_output_tokens / generation_duration) if generation_duration > 0 and total_output_tokens > 0 else 0
 
             return {
                 "id": request_id,
@@ -545,6 +556,7 @@ async def measure_request_streaming(client, model_name, prompt, request_id, max_
                 "prefill_tps": prefill_tps,
                 "generation_tps": generation_tps,
                 "tokens": total_tokens,
+                "input_context_tokens": input_context_tokens,
                 "reasoning_tokens": reasoning_tokens,
                 "answer_tokens": answer_tokens,
                 "success": False,
@@ -562,9 +574,9 @@ async def measure_request_streaming(client, model_name, prompt, request_id, max_
 
 
 
-async def measure_request(client, model_name, prompt, request_id):
+async def measure_request(client, model_name, prompt, request_id, input_context_tokens=0):
     """Wraps the request with streaming and retry logic."""
-    result = await measure_request_streaming(client, model_name, prompt, request_id)
+    result = await measure_request_streaming(client, model_name, prompt, request_id, input_context_tokens)
     return result
 
 
@@ -631,7 +643,9 @@ async def run_benchmark(url, api_key, id_selection, verbose=False, server_type=N
         print(f"Expected: {expected_answer}")
         print("-" * 50)
 
-        result = await measure_request(client, model_name, problem, prompt_data['id'])
+        # Extract input context tokens from prompt data
+        input_context_tokens = prompt_data.get('context_tokens', 0)
+        result = await measure_request(client, model_name, problem, prompt_data['id'], input_context_tokens)
         result["expected_answer"] = expected_answer
         result["position"] = prompt_index
         results.append(result)

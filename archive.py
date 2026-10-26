@@ -46,6 +46,7 @@ def init_db():
             reasoning_time REAL,
             answer_time REAL,
             total_latency REAL,
+            input_context_tokens INTEGER,
             reasoning_tokens INTEGER,
             answer_tokens INTEGER,
             total_tokens INTEGER,
@@ -126,9 +127,9 @@ def save_run(results, server_type, model, api_url, notes):
         cursor.execute("""
             INSERT INTO results
             (run_id, problem_id, position, expected, extracted, correct, ttft, reasoning_time, 
-             answer_time, total_latency, reasoning_tokens, answer_tokens, total_tokens, tps,
+             answer_time, total_latency, input_context_tokens, reasoning_tokens, answer_tokens, total_tokens, tps,
              prefill_tps, generation_tps)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             run_id,
             result.get("id"),
@@ -140,6 +141,7 @@ def save_run(results, server_type, model, api_url, notes):
             result.get("reasoning_time", 0),
             result.get("answer_time", 0),
             result.get("total_latency", 0),
+            result.get("input_context_tokens", 0),
             result.get("reasoning_tokens", 0),
             result.get("answer_tokens", 0),
             result.get("tokens", 0),
@@ -268,7 +270,7 @@ def get_run(run_id):
     # Get individual results
     cursor.execute("""
         SELECT problem_id, position, expected, extracted, correct, ttft, reasoning_time, answer_time, 
-               total_latency, reasoning_tokens, answer_tokens, total_tokens, tps, prefill_tps, generation_tps
+               total_latency, input_context_tokens, reasoning_tokens, answer_tokens, total_tokens, tps, prefill_tps, generation_tps
         FROM results
         WHERE run_id = ?
         ORDER BY position
@@ -303,12 +305,13 @@ def get_run(run_id):
             "reasoning_time": result[6],
             "answer_time": result[7],
             "total_latency": result[8],
-            "reasoning_tokens": result[9],
-            "answer_tokens": result[10],
-            "total_tokens": result[11],
-            "tps": result[12],
-            "prefill_tps": result[13],
-            "generation_tps": result[14]
+            "input_context_tokens": result[9],
+            "reasoning_tokens": result[10],
+            "answer_tokens": result[11],
+            "total_tokens": result[12],
+            "tps": result[13],
+            "prefill_tps": result[14],
+            "generation_tps": result[15]
         })
     
     return run_data
