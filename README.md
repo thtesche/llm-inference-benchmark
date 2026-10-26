@@ -28,12 +28,14 @@ Run specific problems:
 
 ## Options
 
-| Flag        | Description                                      |
-|-------------|--------------------------------------------------|
-| `--url`     | Base URL of the OpenAI-compatible API server     |
-| `--key`     | API key for authentication                       |
-| `--id`      | Problem position(s) in the JSONL file (1-based). Supports single number, range (`1-3`), or comma-separated list (`6,8,10`). Omit to run all 30 problems. |
-| `--verbose` | Print the model's thinking process and full answer |
+| Flag           | Description                                      |
+|----------------|--------------------------------------------------|
+| `--url`        | Base URL of the OpenAI-compatible API server     |
+| `--key`        | API key for authentication                       |
+| `--id`         | Problem position(s) in the JSONL file (1-based). Supports single number, range (`1-3`), or comma-separated list (`6,8,10`). Omit to run all 30 problems. |
+| `--server-type`| Server implementation (e.g., `llama.cpp`, `vllm`, `strata`). Optional; if omitted, you will be prompted (last value suggested). |
+| `--notes`      | Annotations for this run (e.g., quantization settings, model version). Optional; if omitted, you will be prompted. |
+| `--verbose`    | Print the model's thinking process and full answer |
 
 ## Metrics
 
@@ -64,6 +66,45 @@ This helps you monitor inference progress in real-time, showing how quickly the 
 - **Reason. Toks** – Number of reasoning/thinking tokens.
 - **Answer Toks** – Number of visible answer tokens.
 - **Total Tokens** – Sum of reasoning and answer tokens.
+
+## Run Archive & History
+
+All benchmark runs are automatically archived to a local SQLite database (`runs.db`) and backed up as JSON files in `benchmark_data/`. This allows you to track performance over time and compare different configurations.
+
+### View Recent Runs
+
+```bash
+python compare.py --list
+```
+
+Shows recent runs with accuracy, TPS, and notes:
+```
+  ID    Date                 Server        Model              Accuracy   TPS     Correct/Total
+  ====================================================================================================
+  3     2026-10-26T14:32:00  llama.cpp     mistral-7b         93.3%      11.5    28/30
+  2     2026-10-26T10:15:00  vllm          mistral-7b         90.0%      12.1    27/30
+  1     2026-10-25T20:00:00  llama.cpp     mistral-7b         88.0%      10.2    26/30
+```
+
+### Compare Two Runs
+
+```bash
+python compare.py --run-1 1 --run-2 3
+```
+
+Shows side-by-side metrics and per-problem differences (accuracy, TTFT, TPS).
+
+### Web Dashboard
+
+```bash
+python app.py
+```
+
+Opens http://localhost:5000 with:
+- Recent runs and quick stats
+- Run details with all problem results
+- Interactive run comparison tool
+- Performance trends (charts over time)
 
 ## Example Output
 
@@ -99,6 +140,15 @@ The AIME 2026 problem set (`prompts/aime_2026.jsonl`) is a copy of the prompts f
 > **Source:** [youssofal/MTPLX – `mtplx/benchmarks/prompts/aime_2026.jsonl`](https://github.com/youssofal/MTPLX/blob/main/mtplx/benchmarks/prompts/aime_2026.jsonl)
 
 The file contains 30 problems (15 from AIME I, 15 from AIME II), each with an `id`, problem statement, and expected integer answer.
+
+## For LLM Agents
+
+See [LLMDOC.md](LLMDOC.md) for a complete command reference designed for automated agent execution. It includes:
+
+- Structured command syntax with required/optional flags
+- JSON output modes for programmatic processing
+- Exit codes for error handling
+- Typical LLM workflow examples
 
 ## License
 

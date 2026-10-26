@@ -1,0 +1,172 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container">
+    <h1>Compare Two Runs</h1>
+    
+    <div style="margin-bottom: 30px; padding: 20px; background: #f3f4f6; border-radius: 8px;">
+        <div class="form-group">
+            <label for="run1">Run 1:</label>
+            <select id="run1">
+                <option value="">Select a run...</option>
+                {% for run in runs %}
+                <option value="{{ run.id }}">
+                    Run #{{ run.id }} - {{ run.timestamp[:10] }} - {{ run.server_type or 'unknown' }} - {{ "%.1f"|format(run.accuracy * 100) }}%
+                </option>
+                {% endfor %}
+            </select>
+        </div>
+        
+        <div class="form-group">
+            <label for="run2">Run 2:</label>
+            <select id="run2">
+                <option value="">Select a run...</option>
+                {% for run in runs %}
+                <option value="{{ run.id }}">
+                    Run #{{ run.id }} - {{ run.timestamp[:10] }} - {{ run.server_type or 'unknown' }} - {{ "%.1f"|format(run.accuracy * 100) }}%
+                </option>
+                {% endfor %}
+            </select>
+        </div>
+        
+        <button class="button" onclick="compareRuns()">Compare</button>
+    </div>
+    
+    <div id="comparison-result" style="display: none;">
+        <h2>Comparison Results</h2>
+        
+        <table class="comparison-table" style="margin-bottom: 20px;">
+            <thead>
+                <tr>
+                    <th>Metric</th>
+                    <th>Run 1</th>
+                    <th>Run 2</th>
+                    <th>Delta</th>
+                </tr>
+            </thead>
+            <tbody id="comparison-summary">
+            </tbody>
+        </table>
+        
+        <h2>Problem-by-Problem Comparison</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>Pos</th>
+                    <th>Problem</th>
+                    <th>Run 1 Correct</th>
+                    <th>Run 2 Correct</th>
+                    <th>Status</th>
+                    <th>TTFT Δ</th>
+                    <th>TPS Δ</th>
+                </tr>
+            </thead>
+            <tbody id="detailed-comparison">
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<script>
+async function compareRuns() {
+    const run1 = document.getElementById('run1').value;
+    const run2 = document.getElementById('run2').value;
+    
+    if (!run1 || !run2) {
+        alert('Please select two runs');
+        return;
+    }
+    
+    try {
+        const response = await fetch(`/api/compare/${run1}/${run2}`);
+        if (!response.ok) throw new Error('Comparison failed');
+        
+        const data = await response.json();
+        displayComparison(data);
+    } catch (error) {
+        alert('Error: ' + error.message);
+    }
+}
+
+function displayComparison(comparison) {
+    const run1 = comparison.run_1;
+    const run2 = comparison.run_2;
+    const diff = comparison.differences;
+    
+    // Summary table
+    const summaryHtml = `
+        <tr>
+            <td><strong>Accuracy</strong></td>
+            <td>${(run1.accuracy * 100).toFixed(1)}%</td>
+            <td>${(run2.accuracy * 100).toFixed(1)}%</td>
+            <td class="${diff.accuracy_delta >= 0 ? 'delta-positive' : 'delta-negative'}">
+                ${diff.accuracy_delta >= 0 ? '+' : ''}${(diff.accuracy_delta * 100).toFixed(1)}%
+            </td>
+        </tr>
+        <tr>
+            <td><strong>Avg TTFT</strong></td>
+            <td>${formatTime(run1.avg_ttft)}</td>
+            <td>${formatTime(run2.avg_ttft)}</td>
+            <td class="${diff.ttft_delta <= 0 ? 'delta-positive' : 'delta-negative'}">
+                ${diff.ttft_delta >= 0 ? '+' : ''}${diff.ttft_delta.toFixed(3)}s
+            </td>
+        </tr>
+        <tr>
+            <td><strong>Avg TPS</strong></td>
+            <td>${run1.avg_tps.toFixed(1)}</td>
+            <td>${run2.avg_tps.toFixed(1)}</td>
+            <td class="${diff.tps_delta >= 0 ? 'delta-positive' : 'delta-negative'}">
+                ${diff.tps_delta >= 0 ? '+' : ''}${diff.tps_delta.toFixed(1)}
+            </td>
+        </tr>
+        <tr>
+            <td><strong>Server</strong></td>
+            <td>${run1.server_type}</td>
+            <td>${run2.server_type}</td>
+            <td>${run1.server_type === run2.server_type ? 'same' : 'different'}</td>
+        </tr>
+    `;
+    document.getElementById('comparison-summary').innerHTML = summaryHtml;
+    
+    // Detailed comparison
+    const detailedHtml = comparison.detailed_results.map(detail => `
+        <tr>
+            <td>${detail.position}</td>
+            <td>${detail.problem_id}</td>
+            <td>${detail.run_1.correct ? '✓' : '✗'}</td>
+            <td>${detail.run_2.correct ? '✓' : '✗'}</td>
+            <td>${detail.run_1.correct === detail.run_2.correct ? '→' : detail.run_1.correct ? '↓' : '↑'}</td>
+            <td class="${detail.run_2.ttft - detail.run_1.ttft <= 0 ? 'delta-positive' : 'delta-negative'}">
+                ${(detail.run_2.ttft - detail.run_1.ttft >= 0 ? '+' : '')}${(detail.run_2.ttft - detail.run_1.ttft).toFixed(2)}s
+            </td>
+            <td class="${detail.run_2.tps - detail.run_1.tps >= 0 ? 'delta-positive' : 'delta-negative'}">
+                ${(detail.run_2.tps - detail.run_1.tps >= 0 ? '+' : '')}${(detail.run_2.tps - detail.run_1.tps).toFixed(1)}
+            </td>
+        </tr>
+    `).join('');
+    document.getElementById('detailed-comparison').innerHTML = detailedHtml;
+    
+    document.getElementById('comparison-result').style.display = 'block';
+}
+
+function formatTime(seconds) {
+    if (seconds < 60) {
+        return seconds.toFixed(2) + 's';
+    }
+    const minutes = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return minutes + 'm ' + secs.toFixed(2) + 's';
+}
+
+// Load first two runs by default
+document.addEventListener('DOMContentLoaded', () => {
+    const options = document.querySelectorAll('#run1 option');
+    if (options.length > 1) {
+        document.getElementById('run1').value = options[1].value;
+    }
+    if (options.length > 2) {
+        document.getElementById('run2').value = options[2].value;
+    }
+});
+</script>
+{% endblock %}

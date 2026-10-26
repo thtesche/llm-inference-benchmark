@@ -1,0 +1,117 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container">
+    <h1>Run #{{ run.id }} Details</h1>
+    
+    <div style="margin-bottom: 20px;">
+        <p><strong>Timestamp:</strong> {{ run.timestamp }}</p>
+        <p><strong>Server Type:</strong> <span class="badge">{{ run.server_type or 'unknown' }}</span></p>
+        <p><strong>Model:</strong> {{ run.model }}</p>
+        <p><strong>API URL:</strong> <code>{{ run.api_url }}</code></p>
+        {% if run.notes %}
+        <div class="notes">{{ run.notes }}</div>
+        {% endif %}
+    </div>
+    
+    <h2>Summary</h2>
+    <div style="margin-bottom: 20px;">
+        <div class="stat-card">
+            <div class="stat-label">Accuracy</div>
+            <div class="stat-value">{{ "%.1f"|format(run.accuracy * 100) }}%</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">Correct Answers</div>
+            <div class="stat-value">{{ run.total_correct }}/{{ run.total_problems }}</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">Avg TTFT</div>
+            <div class="stat-value">
+                {% if run.avg_ttft < 60 %}
+                    {{ "%.2f"|format(run.avg_ttft) }}s
+                {% else %}
+                    {{ (run.avg_ttft // 60)|int }}m {{ "%.2f"|format(run.avg_ttft % 60) }}s
+                {% endif %}
+            </div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">Avg TPS</div>
+            <div class="stat-value">{{ "%.1f"|format(run.avg_tps) }}</div>
+        </div>
+    </div>
+    
+    <h2>Problem Results</h2>
+    <table>
+        <thead>
+            <tr>
+                <th>Pos</th>
+                <th>Problem ID</th>
+                <th>Expected</th>
+                <th>Received</th>
+                <th>Status</th>
+                <th>TTFT</th>
+                <th>Thinking</th>
+                <th>Answer</th>
+                <th>Total</th>
+                <th>Tokens</th>
+                <th>TPS</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for result in run.results %}
+            <tr>
+                <td>{{ result.position }}</td>
+                <td>{{ result.problem_id }}</td>
+                <td>{{ result.expected }}</td>
+                <td>
+                    {% if result.extracted %}
+                        <span class="{% if result.correct %}correct{% else %}wrong{% endif %}">
+                            {{ result.extracted }}
+                        </span>
+                    {% else %}
+                        <span class="wrong">—</span>
+                    {% endif %}
+                </td>
+                <td>
+                    {% if result.correct %}
+                        <span class="correct">✓ Correct</span>
+                    {% else %}
+                        <span class="wrong">✗ Wrong</span>
+                    {% endif %}
+                </td>
+                <td>
+                    {% if result.ttft < 60 %}
+                        {{ "%.2f"|format(result.ttft) }}s
+                    {% else %}
+                        {{ (result.ttft // 60)|int }}m {{ "%.2f"|format(result.ttft % 60) }}s
+                    {% endif %}
+                </td>
+                <td>
+                    {% if result.reasoning_time < 60 %}
+                        {{ "%.2f"|format(result.reasoning_time) }}s
+                    {% else %}
+                        {{ (result.reasoning_time // 60)|int }}m {{ "%.2f"|format(result.reasoning_time % 60) }}s
+                    {% endif %}
+                </td>
+                <td>
+                    {% if result.answer_time < 60 %}
+                        {{ "%.2f"|format(result.answer_time) }}s
+                    {% else %}
+                        {{ (result.answer_time // 60)|int }}m {{ "%.2f"|format(result.answer_time % 60) }}s
+                    {% endif %}
+                </td>
+                <td>
+                    {% if result.total_latency < 60 %}
+                        {{ "%.2f"|format(result.total_latency) }}s
+                    {% else %}
+                        {{ (result.total_latency // 60)|int }}m {{ "%.2f"|format(result.total_latency % 60) }}s
+                    {% endif %}
+                </td>
+                <td>{{ result.total_tokens }}</td>
+                <td>{{ "%.1f"|format(result.tps) }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

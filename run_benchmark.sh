@@ -12,6 +12,8 @@ set -f
 URL="$DEFAULT_URL"
 KEY="$DEFAULT_KEY"
 ID="$DEFAULT_ID"
+SERVER_TYPE=""
+NOTES=""
 DRY_RUN=0
 
 # Handle optional positional URL (first argument, if not a flag)
@@ -70,6 +72,16 @@ while [ $# -gt 0 ]; do
         --id)
             [ -n "$2" ] && ID="$2" && shift 2 || shift
             ;;
+        --server-type)
+            [ -n "$2" ] && SERVER_TYPE="$2" && shift 2 || shift
+            ;;
+        --notes)
+            [ -n "$2" ] && NOTES="$2" && shift 2 || shift
+            ;;
+        --verbose)
+            VERBOSE="--verbose"
+            shift
+            ;;
         *)
             shift
             ;;
@@ -102,6 +114,8 @@ echo "[NOTE] Ranges in quotes: --id '1-3' | Multiple IDs: --id 6 8 10"
 # Dry-Run: Output resolved arguments and exit
 if [ "$DRY_RUN" -eq 1 ]; then
     echo "PYTHON_ARGS: --url $URL --key $KEY --id $ID"
+    [ -n "$SERVER_TYPE" ] && echo "  --server-type $SERVER_TYPE"
+    [ -n "$NOTES" ] && echo "  --notes $NOTES"
     exit 0
 fi
 
@@ -110,15 +124,21 @@ if [ ! -d "venv" ]; then
     echo "Creating virtual environment..."
     python3 -m venv venv
     source venv/bin/activate
-    pip install openai
+    pip install openai flask
 else
     source venv/bin/activate
 fi
 
 # Re-enable globbing
 
+# Build Python args
+PYTHON_ARGS="--url \"$URL\" --key \"$KEY\" --id \"$ID\""
+[ -n "$SERVER_TYPE" ] && PYTHON_ARGS="$PYTHON_ARGS --server-type \"$SERVER_TYPE\""
+[ -n "$NOTES" ] && PYTHON_ARGS="$PYTHON_ARGS --notes \"$NOTES\""
+[ -n "$VERBOSE" ] && PYTHON_ARGS="$PYTHON_ARGS $VERBOSE"
+
 # Run benchmark
-./venv/bin/python api_benchmark.py --url "$URL" --key "$KEY" --id "$ID"
+eval "./venv/bin/python api_benchmark.py $PYTHON_ARGS"
 
 # Exit venv
 deactivate

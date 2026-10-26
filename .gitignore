@@ -3,3 +3,8 @@ MTPLX/
 __pycache__/
 .pytest_cache/
 venv/
+
+# Local benchmark archive
+runs.db
+benchmark_data/
+*.db

@@ -1,0 +1,202 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container">
+    <h1>Performance Trends</h1>
+    
+    <div style="margin-bottom: 30px;">
+        <h2>Accuracy Over Time</h2>
+        <div class="chart-container">
+            <canvas id="accuracyChart" height="80"></canvas>
+        </div>
+    </div>
+    
+    <div style="margin-bottom: 30px;">
+        <h2>TPS Over Time</h2>
+        <div class="chart-container">
+            <canvas id="tpsChart" height="80"></canvas>
+        </div>
+    </div>
+    
+    <div style="margin-bottom: 30px;">
+        <h2>TTFT Over Time</h2>
+        <div class="chart-container">
+            <canvas id="ttftChart" height="80"></canvas>
+        </div>
+    </div>
+    
+    <h2>Runs by Server Type</h2>
+    <div class="chart-container">
+        <canvas id="serverTypeChart" height="100"></canvas>
+    </div>
+</div>
+
+<script>
+const colors = [
+    'rgb(59, 130, 246)',
+    'rgb(34, 197, 94)',
+    'rgb(239, 68, 68)',
+    'rgb(249, 115, 22)',
+    'rgb(168, 85, 247)',
+    'rgb(14, 165, 233)',
+    'rgb(244, 63, 94)',
+    'rgb(107, 114, 128)'
+];
+
+async function loadTrends() {
+    try {
+        const response = await fetch('/api/runs?limit=50');
+        const runs = await response.json();
+        
+        if (runs.length === 0) {
+            document.body.innerHTML += '<p style="text-align: center; padding: 40px;">No data available yet.</p>';
+            return;
+        }
+        
+        const sortedRuns = runs.reverse(); // Oldest first
+        
+        // Accuracy chart
+        new Chart(document.getElementById('accuracyChart'), {
+            type: 'line',
+            data: {
+                labels: sortedRuns.map((r, i) => `Run ${r.id}`),
+                datasets: [{
+                    label: 'Accuracy (%)',
+                    data: sortedRuns.map(r => (r.accuracy * 100).toFixed(1)),
+                    borderColor: colors[0],
+                    backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                    fill: true,
+                    tension: 0.4,
+                    pointRadius: 5,
+                    pointBackgroundColor: colors[0],
+                    pointBorderColor: '#fff',
+                    pointBorderWidth: 2
+                }]
+            },
+            options: {
+                responsive: true,
+                plugins: {
+                    legend: { display: true, position: 'top' },
+                    title: { display: false }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        max: 100,
+                        title: { display: true, text: 'Accuracy (%)' }
+                    }
+                }
+            }
+        });
+        
+        // TPS chart
+        new Chart(document.getElementById('tpsChart'), {
+            type: 'line',
+            data: {
+                labels: sortedRuns.map((r, i) => `Run ${r.id}`),
+                datasets: [{
+                    label: 'TPS',
+                    data: sortedRuns.map(r => r.avg_tps.toFixed(1)),
+                    borderColor: colors[1],
+                    backgroundColor: 'rgba(34, 197, 94, 0.1)',
+                    fill: true,
+                    tension: 0.4,
+                    pointRadius: 5,
+                    pointBackgroundColor: colors[1],
+                    pointBorderColor: '#fff',
+                    pointBorderWidth: 2
+                }]
+            },
+            options: {
+                responsive: true,
+                plugins: {
+                    legend: { display: true, position: 'top' },
+                    title: { display: false }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        title: { display: true, text: 'Tokens per Second' }
+                    }
+                }
+            }
+        });
+        
+        // TTFT chart
+        new Chart(document.getElementById('ttftChart'), {
+            type: 'line',
+            data: {
+                labels: sortedRuns.map((r, i) => `Run ${r.id}`),
+                datasets: [{
+                    label: 'TTFT (seconds)',
+                    data: sortedRuns.map(r => r.avg_ttft.toFixed(2)),
+                    borderColor: colors[2],
+                    backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                    fill: true,
+                    tension: 0.4,
+                    pointRadius: 5,
+                    pointBackgroundColor: colors[2],
+                    pointBorderColor: '#fff',
+                    pointBorderWidth: 2
+                }]
+            },
+            options: {
+                responsive: true,
+                plugins: {
+                    legend: { display: true, position: 'top' },
+                    title: { display: false }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        title: { display: true, text: 'Time to First Token (s)' }
+                    }
+                }
+            }
+        });
+        
+        // Server type distribution
+        const serverTypeCounts = {};
+        const serverTypeAccuracy = {};
+        sortedRuns.forEach(run => {
+            const server = run.server_type || 'unknown';
+            serverTypeCounts[server] = (serverTypeCounts[server] || 0) + 1;
+            serverTypeAccuracy[server] = (serverTypeAccuracy[server] || 0) + run.accuracy;
+        });
+        
+        const serverTypes = Object.keys(serverTypeCounts);
+        new Chart(document.getElementById('serverTypeChart'), {
+            type: 'bar',
+            data: {
+                labels: serverTypes,
+                datasets: [{
+                    label: 'Avg Accuracy (%)',
+                    data: serverTypes.map(s => (serverTypeAccuracy[s] / serverTypeCounts[s] * 100).toFixed(1)),
+                    backgroundColor: colors.slice(0, serverTypes.length)
+                }]
+            },
+            options: {
+                responsive: true,
+                plugins: {
+                    legend: { display: true, position: 'top' },
+                    title: { display: false }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        max: 100,
+                        title: { display: true, text: 'Accuracy (%)' }
+                    }
+                }
+            }
+        });
+        
+    } catch (error) {
+        console.error('Error loading trends:', error);
+        alert('Error loading trends: ' + error.message);
+    }
+}
+
+document.addEventListener('DOMContentLoaded', loadTrends);
+</script>
+{% endblock %}

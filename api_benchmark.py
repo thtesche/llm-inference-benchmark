@@ -4,6 +4,7 @@ import asyncio
 import argparse
 import re
 from openai import AsyncOpenAI
+from archive import save_run, get_last_server_type
 
 # AIME System-Prompt and User-Prompt Suffix
 SYSTEM_PROMPT = (
@@ -536,7 +537,7 @@ async def measure_request(client, model_name, prompt, request_id):
     return result
 
 
-async def run_benchmark(url, api_key, id_selection, verbose=False):
+async def run_benchmark(url, api_key, id_selection, verbose=False, server_type=None, notes=None):
     """Main function to discover models, load prompts, and run the evaluation sequence."""
     client = AsyncOpenAI(base_url=url, api_key=api_key)
 
@@ -584,9 +585,23 @@ async def run_benchmark(url, api_key, id_selection, verbose=False):
 
         result = await measure_request(client, model_name, problem, prompt_data['id'])
         result["expected_answer"] = expected_answer
+        result["position"] = prompt_index
         results.append(result)
 
     print_statistics(results)
+    
+    # Save to database
+    if server_type is None:
+        last_server = get_last_server_type()
+        prompt_msg = f"Server type (last: '{last_server}'): " if last_server else "Server type: "
+        server_type = input(f"\n{prompt_msg}").strip() or last_server or "unknown"
+    
+    if notes is None:
+        notes = input("Notes for this run (optional): ").strip()
+    
+    run_id = save_run(results, server_type, model_name, url, notes)
+    print(f"\n[INFO] Run saved to database with ID: {run_id}")
+    print(f"[INFO] Backup saved to: benchmark_data/run_*.json")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run AIME API benchmark.")
@@ -594,7 +609,9 @@ if __name__ == "__main__":
     parser.add_argument("--key", type=str, required=True, help="API key")
     parser.add_argument("--id", type=str, help="Prompt IDs (e.g., '1-3', '6 8 10')")
     parser.add_argument("--verbose", action="store_true", help="Enable verbose output")
+    parser.add_argument("--server-type", type=str, help="Server type (e.g., 'llama.cpp', 'vllm')")
+    parser.add_argument("--notes", type=str, help="Notes for this run")
 
     args = parser.parse_args()
 
-    asyncio.run(run_benchmark(args.url, args.key, args.id, args.verbose))
+    asyncio.run(run_benchmark(args.url, args.key, args.id, args.verbose, args.server_type, args.notes))
