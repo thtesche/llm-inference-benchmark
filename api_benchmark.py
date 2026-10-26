@@ -213,7 +213,7 @@ def print_statistics(results):
 
 
 PROMPTS_FILE = "prompts/aime_2026.jsonl"
-SWE_PROMPTS_FILE = "prompts/swe_context_medium.jsonl"  # ~50k tokens per context for faster testing
+SWE_PROMPTS_FILE = "prompts/swe_context_large.jsonl"  # ~100k tokens per context for realistic measurement
 DEBUG_HELLO = False
 BENCHMARK_MODE = "aime"  # "aime" for small or "swe" for large contexts
 
