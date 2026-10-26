@@ -19,13 +19,21 @@ python3 api_benchmark.py --url <url> --key <key> --benchmark aime --id 1-10
 - Dataset: `prompts/swe_context_medium.jsonl` (~50k tokens) or `swe_context_large.jsonl` (~100k tokens)
 - Context size: 50,000 - 100,000 tokens per problem
 - Use case: Realistic Prefill/Generation TPS measurement with large code contexts
-- TTFT: 2-5+ seconds (realistic)
-- Prefill TPS: ~200-300 tok/s (matches Strata's metrics)
-- Generation TPS: ~35-40 tok/s (consistent token generation)
+- TTFT: ~0.1s (prefix cache hit on a warm server)
+- Prefill TPS: ~340 tok/s (matches Strata's metrics)
+- Generation TPS: ~34 tok/s (consistent token generation)
 
 ```bash
+# ~100k token contexts (default)
 python3 api_benchmark.py --url <url> --key <key> --benchmark swe --id 1-5
+
+# ~50k token contexts
+SWE_PROMPTS_FILE=prompts/swe_context_medium.jsonl \
+  python3 api_benchmark.py --url <url> --key <key> --benchmark swe --id 1
 ```
+
+`SWE_PROMPTS_FILE` selects the prompt file (default `prompts/swe_context_large.jsonl`).
+Run one benchmark at a time - parallel requests distort throughput measurements.
 
 ## Key Metrics: Prefill vs Generation
 
@@ -34,16 +42,26 @@ python3 api_benchmark.py --url <url> --key <key> --benchmark swe --id 1-5
 When processing large code contexts, **two very different throughputs** emerge:
 
 ```
-PREFILL PHASE (thinking):
-  - Time to First Token (TTFT): 0-5+ seconds
-  - Tokens: Reasoning tokens (~1000-2000)
-  - Throughput: ~200-300 tok/s (limited by memory bandwidth & compute)
-  
+PREFILL PHASE (context -> first answer token):
+  - CPU/GPU work: read the whole input context into the KV cache
+  - Duration: here "reasoning_duration" = time from request start to first answer token
+  - Tokens: input context (server-reported prompt_tokens)
+  - Throughput: ~340 tok/s (limited by memory bandwidth & compute)
+
 GENERATION PHASE (answer):
-  - Duration: Follows thinking
-  - Tokens: Answer tokens (~200-500)
-  - Throughput: ~35-40 tok/s (limited by KV-cache and attention)
+  - Duration: first answer token -> last answer token
+  - Tokens: answer tokens (server-reported completion_tokens, thinking excluded)
+  - Throughput: ~34 tok/s (limited by KV-cache and attention)
 ```
+
+The bare TTFT (~0.1s) is *not* used as the prefill phase: on this server the
+context comes from the prefix cache. The reasoning/thinking phase is dominated by
+context processing, so it is used as the prefill phase - which is what makes the
+result comparable to Strata's PREFILL T/S (Strata: PROMPT / (DURATION - decode time)).
+
+Input context size comes from the server's `prompt_tokens` when available; the
+local `len(text) // 4` estimate is only a fallback. Output token counts use
+`completion_tokens` (never `total_tokens`, which includes the prompt).
 
 ### Strata Confirms This
 
@@ -53,10 +71,12 @@ PREFILL T/S:  164-340 tok/s   ← Large batch processing
 DECODE T/S:   35.7-38.1 tok/s ← Single token generation
 ```
 
-Our measurements show:
+Our measurements (qwen3.8-flash-next-q2_0, Strata, sequential runs):
 ```
-Prefill TPS:      200-300 tok/s (realistic with 100k context)
-Generation TPS:   35-40 tok/s   (consistent with decode phase)
+Run #3 - 100k context file (112,034 prompt tokens):
+  Prefill TPS:    338.2   Generation TPS: 34.5   Answer tokens: 6,656
+Run #4 - 50k context file (72,009 prompt tokens):
+  Prefill TPS:    336.0   Generation TPS: 33.5   Answer tokens: 2,315
 ```
 
 ## Creating Benchmarks
@@ -66,9 +86,8 @@ Generation TPS:   35-40 tok/s   (consistent with decode phase)
 # Medium context (50k tokens, ~5-10 min per problem)
 python3 api_benchmark.py --benchmark swe --id 1
 
-# Large context (100k tokens, ~10-20 min per problem)
-# First edit api_benchmark.py: SWE_PROMPTS_FILE = "prompts/swe_context_large.jsonl"
-python3 api_benchmark.py --benchmark swe --id 1
+# Large context (100k tokens, ~5-9 min per problem)
+SWE_PROMPTS_FILE=prompts/swe_context_large.jsonl python3 api_benchmark.py --benchmark swe --id 1
 ```
 
 ### Generate New Benchmarks
@@ -90,14 +109,17 @@ Generation TPS - Min: 28.9      | Max: 45.0      | Avg: 38.1
 ```
 *(Prefill TPS is unrealistic due to 0.01s TTFT with small inputs)*
 
-### SWE Benchmark (50k tokens)
+### SWE Benchmark
 ```
-Expected after completion:
-TTFT         - 2-5 seconds
-Prefill TPS  - 200-300 tok/s (realistic)
-Generation TPS - 35-40 tok/s (consistent)
-Think-Ratio  - 85-95% (large reasoning phase)
+TTFT           - ~0.1s (prefix cache)
+Prefill TPS    - ~340 tok/s
+Generation TPS - ~34 tok/s
+Think-Ratio    - 60-75% (context processing dominates)
 ```
+
+SWE tasks have a free-text `expected_output`, so they cannot be auto-graded:
+such results store `correct = NULL` and the run reports accuracy `n/a`
+instead of a misleading 0%.
 
 ## Database & Archival
 
@@ -121,9 +143,10 @@ python3 app.py
 ```
 
 Features:
-- View all runs with benchmarks (AIME vs SWE)
-- Trends across multiple runs
-- Compare Prefill vs Generation TPS
+- Run list with context tokens, Prefill TPS and Generation TPS per run
+- Per-run detail: summary cards, per-problem Ctx/Prefill/Gen columns
+- Trends: Accuracy, TPS, Prefill vs Generation TPS, TTFT, runs by server type
+- Compare: Prefill/Generation/Context deltas per run and per problem
 - Per-run notes and server type tracking
 
 ## Integration Notes

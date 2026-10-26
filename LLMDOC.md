@@ -113,12 +113,20 @@ python compare.py --list [--limit N] [--server-type TYPE] [--json]
     "model": "mistral-7b",
     "accuracy": 0.933,
     "avg_tps": 11.5,
+    "avg_prefill_tps": 338.2,
+    "avg_generation_tps": 34.5,
+    "avg_context_tokens": 112034,
     "correct": 28,
     "total": 30,
     "notes": "Q5 quant"
   }
 ]
 ```
+
+`accuracy` is `null` when the run contains only free-text tasks (e.g. SWE), which
+cannot be auto-graded. `avg_prefill_tps` / `avg_generation_tps` /
+`avg_context_tokens` are the large-context metrics described in
+`SWE_BENCHMARKING.md`.
 
 ### Example Usage
 
@@ -164,13 +172,19 @@ Shows side-by-side metrics and per-problem differences:
     "id": 4,
     "accuracy": 0.9,
     "avg_ttft": 3.2,
-    "avg_tps": 12.1
+    "avg_tps": 12.1,
+    "avg_prefill_tps": 336.0,
+    "avg_generation_tps": 33.5,
+    "avg_context_tokens": 72009
   },
   "run_2": {
     "id": 5,
     "accuracy": 0.933,
     "avg_ttft": 3.17,
-    "avg_tps": 11.5
+    "avg_tps": 11.5,
+    "avg_prefill_tps": 338.2,
+    "avg_generation_tps": 34.5,
+    "avg_context_tokens": 112034
   },
   "differences": {
     "accuracy_delta": 0.033,
@@ -181,8 +195,8 @@ Shows side-by-side metrics and per-problem differences:
     {
       "position": 1,
       "problem_id": "2026-I-1",
-      "run_1": {"correct": true, "ttft": 3.2, "tps": 11.8},
-      "run_2": {"correct": true, "ttft": 3.17, "tps": 11.9}
+      "run_1": {"correct": true, "ttft": 3.2, "tps": 11.8, "prefill_tps": 336.0, "generation_tps": 33.5},
+      "run_2": {"correct": true, "ttft": 3.17, "tps": 11.9, "prefill_tps": 338.2, "generation_tps": 34.5}
     }
   ]
 }
@@ -207,13 +221,13 @@ python compare.py --run-1 4 --run-2 5 --json | python -m json.tool
 python app.py
 ```
 
-Opens `http://localhost:5000` in browser.
+Opens `http://localhost:8888` in browser.
 
 **Pages:**
-- `/` – Recent runs (table, quick stats)
-- `/run/<id>` – Full details for run ID
-- `/compare` – Interactive run comparison UI
-- `/trends` – Charts: accuracy/TPS/TTFT over time
+- `/` – Recent runs (table with context tokens, Prefill TPS, Gen TPS, quick stats)
+- `/run/<id>` – Full details for run ID (summary cards + per-problem Ctx/Prefill/Gen)
+- `/compare` – Interactive run comparison UI (Prefill/Generation/Context deltas)
+- `/trends` – Charts: accuracy, TPS, Prefill vs Generation TPS, TTFT, server types
 
 ### REST API
 
@@ -317,7 +331,10 @@ Each run is automatically saved as `benchmark_data/run_YYYYMMDD_HHMMSS.json`:
     "correct": 28,
     "accuracy": 0.933,
     "avg_ttft": 3.17,
-    "avg_tps": 11.5
+    "avg_tps": 11.5,
+    "avg_prefill_tps": 338.2,
+    "avg_generation_tps": 34.5,
+    "avg_context_tokens": 112034
   },
   "results": [
     {
@@ -330,9 +347,12 @@ Each run is automatically saved as `benchmark_data/run_YYYYMMDD_HHMMSS.json`:
       "reasoning_time": 149.05,
       "answer_time": 142.32,
       "total_latency": 294.55,
+      "input_context_tokens": 112034,
       "reasoning_tokens": 1776,
       "answer_tokens": 1584,
-      "tps": 11.5
+      "tps": 11.5,
+      "prefill_tps": 338.2,
+      "generation_tps": 34.5
     }
   ]
 }

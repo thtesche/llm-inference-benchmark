@@ -18,11 +18,16 @@
     <div style="margin-bottom: 20px;">
         <div class="stat-card">
             <div class="stat-label">Accuracy</div>
-            <div class="stat-value">{{ "%.1f"|format(run.accuracy * 100) }}%</div>
+            <div class="stat-value">
+                {% if run.accuracy is not none %}{{ "%.1f"|format(run.accuracy * 100) }}%{% else %}n/a{% endif %}
+            </div>
         </div>
         <div class="stat-card">
             <div class="stat-label">Correct Answers</div>
             <div class="stat-value">{{ run.total_correct }}/{{ run.total_problems }}</div>
+            {% if run.accuracy is none %}
+            <div style="font-size: 0.8em; color: #888;">free-text tasks not auto-graded</div>
+            {% endif %}
         </div>
         <div class="stat-card">
             <div class="stat-label">Avg TTFT</div>
@@ -37,6 +42,20 @@
         <div class="stat-card">
             <div class="stat-label">Avg TPS</div>
             <div class="stat-value">{{ "%.1f"|format(run.avg_tps) }}</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">Prefill TPS</div>
+            <div class="stat-value">{{ "%.1f"|format(run.avg_prefill_tps) }}</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">Generation TPS</div>
+            <div class="stat-value">{{ "%.1f"|format(run.avg_generation_tps) }}</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">Avg Context</div>
+            <div class="stat-value">
+                {% if run.avg_context_tokens %}{{ "{:,}".format(run.avg_context_tokens) }}{% else %}—{% endif %}
+            </div>
         </div>
     </div>
     
@@ -55,6 +74,9 @@
                 <th>Total</th>
                 <th>Tokens</th>
                 <th>TPS</th>
+                <th>Ctx Tok</th>
+                <th>Prefill TPS</th>
+                <th>Gen TPS</th>
             </tr>
         </thead>
         <tbody>
@@ -64,7 +86,9 @@
                 <td>{{ result.problem_id }}</td>
                 <td>{{ result.expected }}</td>
                 <td>
-                    {% if result.extracted %}
+                    {% if result.correct is none %}
+                        <span style="color: #888;">—</span>
+                    {% elif result.extracted %}
                         <span class="{% if result.correct %}correct{% else %}wrong{% endif %}">
                             {{ result.extracted }}
                         </span>
@@ -73,7 +97,9 @@
                     {% endif %}
                 </td>
                 <td>
-                    {% if result.correct %}
+                    {% if result.correct is none %}
+                        <span style="color: #888;">n/a</span>
+                    {% elif result.correct %}
                         <span class="correct">✓ Correct</span>
                     {% else %}
                         <span class="wrong">✗ Wrong</span>
@@ -109,6 +135,11 @@
                 </td>
                 <td>{{ result.total_tokens }}</td>
                 <td>{{ "%.1f"|format(result.tps) }}</td>
+                <td>
+                    {% if result.input_context_tokens %}{{ "{:,}".format(result.input_context_tokens) }}{% else %}—{% endif %}
+                </td>
+                <td>{{ "%.1f"|format(result.prefill_tps or 0) }}</td>
+                <td>{{ "%.1f"|format(result.generation_tps or 0) }}</td>
             </tr>
             {% endfor %}
         </tbody>

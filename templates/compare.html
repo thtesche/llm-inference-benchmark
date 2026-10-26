@@ -11,7 +11,7 @@
                 <option value="">Select a run...</option>
                 {% for run in runs %}
                 <option value="{{ run.id }}">
-                    Run #{{ run.id }} - {{ run.timestamp[:10] }} - {{ run.server_type or 'unknown' }} - {{ "%.1f"|format(run.accuracy * 100) }}%
+                    Run #{{ run.id }} - {{ run.timestamp[:10] }} - {{ run.server_type or 'unknown' }} - {% if run.accuracy is not none %}{{ "%.1f"|format(run.accuracy * 100) }}%{% else %}n/a{% endif %}
                 </option>
                 {% endfor %}
             </select>
@@ -23,7 +23,7 @@
                 <option value="">Select a run...</option>
                 {% for run in runs %}
                 <option value="{{ run.id }}">
-                    Run #{{ run.id }} - {{ run.timestamp[:10] }} - {{ run.server_type or 'unknown' }} - {{ "%.1f"|format(run.accuracy * 100) }}%
+                    Run #{{ run.id }} - {{ run.timestamp[:10] }} - {{ run.server_type or 'unknown' }} - {% if run.accuracy is not none %}{{ "%.1f"|format(run.accuracy * 100) }}%{% else %}n/a{% endif %}
                 </option>
                 {% endfor %}
             </select>
@@ -59,6 +59,8 @@
                     <th>Status</th>
                     <th>TTFT Δ</th>
                     <th>TPS Δ</th>
+                    <th>Prefill Δ</th>
+                    <th>Gen Δ</th>
                 </tr>
             </thead>
             <tbody id="detailed-comparison">
@@ -97,10 +99,10 @@ function displayComparison(comparison) {
     const summaryHtml = `
         <tr>
             <td><strong>Accuracy</strong></td>
-            <td>${(run1.accuracy * 100).toFixed(1)}%</td>
-            <td>${(run2.accuracy * 100).toFixed(1)}%</td>
-            <td class="${diff.accuracy_delta >= 0 ? 'delta-positive' : 'delta-negative'}">
-                ${diff.accuracy_delta >= 0 ? '+' : ''}${(diff.accuracy_delta * 100).toFixed(1)}%
+            <td>${run1.accuracy === null ? 'n/a' : (run1.accuracy * 100).toFixed(1) + '%'}</td>
+            <td>${run2.accuracy === null ? 'n/a' : (run2.accuracy * 100).toFixed(1) + '%'}</td>
+            <td class="${diff.accuracy_delta === null ? '' : (diff.accuracy_delta >= 0 ? 'delta-positive' : 'delta-negative')}">
+                ${diff.accuracy_delta === null ? '—' : (diff.accuracy_delta >= 0 ? '+' : '') + (diff.accuracy_delta * 100).toFixed(1) + '%'}
             </td>
         </tr>
         <tr>
@@ -120,6 +122,30 @@ function displayComparison(comparison) {
             </td>
         </tr>
         <tr>
+            <td><strong>Prefill TPS</strong></td>
+            <td>${run1.avg_prefill_tps.toFixed(1)}</td>
+            <td>${run2.avg_prefill_tps.toFixed(1)}</td>
+            <td class="${run2.avg_prefill_tps - run1.avg_prefill_tps >= 0 ? 'delta-positive' : 'delta-negative'}">
+                ${run2.avg_prefill_tps - run1.avg_prefill_tps >= 0 ? '+' : ''}${(run2.avg_prefill_tps - run1.avg_prefill_tps).toFixed(1)}
+            </td>
+        </tr>
+        <tr>
+            <td><strong>Generation TPS</strong></td>
+            <td>${run1.avg_generation_tps.toFixed(1)}</td>
+            <td>${run2.avg_generation_tps.toFixed(1)}</td>
+            <td class="${run2.avg_generation_tps - run1.avg_generation_tps >= 0 ? 'delta-positive' : 'delta-negative'}">
+                ${run2.avg_generation_tps - run1.avg_generation_tps >= 0 ? '+' : ''}${(run2.avg_generation_tps - run1.avg_generation_tps).toFixed(1)}
+            </td>
+        </tr>
+        <tr>
+            <td><strong>Context Tokens</strong></td>
+            <td>${run1.avg_context_tokens.toLocaleString()}</td>
+            <td>${run2.avg_context_tokens.toLocaleString()}</td>
+            <td class="${run2.avg_context_tokens - run1.avg_context_tokens >= 0 ? 'delta-positive' : 'delta-negative'}">
+                ${run2.avg_context_tokens >= run1.avg_context_tokens ? '+' : ''}${(run2.avg_context_tokens - run1.avg_context_tokens).toLocaleString()}
+            </td>
+        </tr>
+        <tr>
             <td><strong>Server</strong></td>
             <td>${run1.server_type}</td>
             <td>${run2.server_type}</td>
@@ -133,14 +159,20 @@ function displayComparison(comparison) {
         <tr>
             <td>${detail.position}</td>
             <td>${detail.problem_id}</td>
-            <td>${detail.run_1.correct ? '✓' : '✗'}</td>
-            <td>${detail.run_2.correct ? '✓' : '✗'}</td>
-            <td>${detail.run_1.correct === detail.run_2.correct ? '→' : detail.run_1.correct ? '↓' : '↑'}</td>
+            <td>${detail.run_1.correct === null ? 'n/a' : (detail.run_1.correct ? '✓' : '✗')}</td>
+            <td>${detail.run_2.correct === null ? 'n/a' : (detail.run_2.correct ? '✓' : '✗')}</td>
+            <td>${detail.run_1.correct === null || detail.run_2.correct === null ? '—' : (detail.run_1.correct === detail.run_2.correct ? '→' : detail.run_1.correct ? '↓' : '↑')}</td>
             <td class="${detail.run_2.ttft - detail.run_1.ttft <= 0 ? 'delta-positive' : 'delta-negative'}">
                 ${(detail.run_2.ttft - detail.run_1.ttft >= 0 ? '+' : '')}${(detail.run_2.ttft - detail.run_1.ttft).toFixed(2)}s
             </td>
             <td class="${detail.run_2.tps - detail.run_1.tps >= 0 ? 'delta-positive' : 'delta-negative'}">
                 ${(detail.run_2.tps - detail.run_1.tps >= 0 ? '+' : '')}${(detail.run_2.tps - detail.run_1.tps).toFixed(1)}
+            </td>
+            <td class="${(detail.run_2.prefill_tps || 0) - (detail.run_1.prefill_tps || 0) >= 0 ? 'delta-positive' : 'delta-negative'}">
+                ${((detail.run_2.prefill_tps || 0) - (detail.run_1.prefill_tps || 0) >= 0 ? '+' : '')}${((detail.run_2.prefill_tps || 0) - (detail.run_1.prefill_tps || 0)).toFixed(1)}
+            </td>
+            <td class="${(detail.run_2.generation_tps || 0) - (detail.run_1.generation_tps || 0) >= 0 ? 'delta-positive' : 'delta-negative'}">
+                ${((detail.run_2.generation_tps || 0) - (detail.run_1.generation_tps || 0) >= 0 ? '+' : '')}${((detail.run_2.generation_tps || 0) - (detail.run_1.generation_tps || 0)).toFixed(1)}
             </td>
         </tr>
     `).join('');

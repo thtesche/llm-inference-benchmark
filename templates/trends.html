@@ -19,6 +19,13 @@
     </div>
     
     <div style="margin-bottom: 30px;">
+        <h2>Prefill vs Generation TPS</h2>
+        <div class="chart-container">
+            <canvas id="phaseChart" height="80"></canvas>
+        </div>
+    </div>
+
+    <div style="margin-bottom: 30px;">
         <h2>TTFT Over Time</h2>
         <div class="chart-container">
             <canvas id="ttftChart" height="80"></canvas>
@@ -62,7 +69,7 @@ async function loadTrends() {
                 labels: sortedRuns.map((r, i) => `Run ${r.id}`),
                 datasets: [{
                     label: 'Accuracy (%)',
-                    data: sortedRuns.map(r => (r.accuracy * 100).toFixed(1)),
+                    data: sortedRuns.map(r => r.accuracy === null ? null : +(r.accuracy * 100).toFixed(1)),
                     borderColor: colors[0],
                     backgroundColor: 'rgba(59, 130, 246, 0.1)',
                     fill: true,
@@ -122,6 +129,53 @@ async function loadTrends() {
             }
         });
         
+        // Prefill vs Generation TPS chart
+        new Chart(document.getElementById('phaseChart'), {
+            type: 'line',
+            data: {
+                labels: sortedRuns.map((r, i) => `Run ${r.id}`),
+                datasets: [
+                    {
+                        label: 'Prefill TPS (input context)',
+                        data: sortedRuns.map(r => (r.avg_prefill_tps || 0).toFixed(1)),
+                        borderColor: colors[4],
+                        backgroundColor: 'rgba(168, 85, 247, 0.1)',
+                        fill: false,
+                        tension: 0.4,
+                        pointRadius: 5,
+                        pointBackgroundColor: colors[4],
+                        pointBorderColor: '#fff',
+                        pointBorderWidth: 2
+                    },
+                    {
+                        label: 'Generation TPS (output tokens)',
+                        data: sortedRuns.map(r => (r.avg_generation_tps || 0).toFixed(1)),
+                        borderColor: colors[1],
+                        backgroundColor: 'rgba(34, 197, 94, 0.1)',
+                        fill: false,
+                        tension: 0.4,
+                        pointRadius: 5,
+                        pointBackgroundColor: colors[1],
+                        pointBorderColor: '#fff',
+                        pointBorderWidth: 2
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                plugins: {
+                    legend: { display: true, position: 'top' },
+                    title: { display: false }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        title: { display: true, text: 'Tokens per Second' }
+                    }
+                }
+            }
+        });
+
         // TTFT chart
         new Chart(document.getElementById('ttftChart'), {
             type: 'line',
@@ -158,10 +212,14 @@ async function loadTrends() {
         // Server type distribution
         const serverTypeCounts = {};
         const serverTypeAccuracy = {};
+        const serverTypeGraded = {};
         sortedRuns.forEach(run => {
             const server = run.server_type || 'unknown';
             serverTypeCounts[server] = (serverTypeCounts[server] || 0) + 1;
-            serverTypeAccuracy[server] = (serverTypeAccuracy[server] || 0) + run.accuracy;
+            if (run.accuracy !== null) {
+                serverTypeAccuracy[server] = (serverTypeAccuracy[server] || 0) + run.accuracy;
+                serverTypeGraded[server] = (serverTypeGraded[server] || 0) + 1;
+            }
         });
         
         const serverTypes = Object.keys(serverTypeCounts);
@@ -171,7 +229,7 @@ async function loadTrends() {
                 labels: serverTypes,
                 datasets: [{
                     label: 'Avg Accuracy (%)',
-                    data: serverTypes.map(s => (serverTypeAccuracy[s] / serverTypeCounts[s] * 100).toFixed(1)),
+                    data: serverTypes.map(s => serverTypeGraded[s] ? +(serverTypeAccuracy[s] / serverTypeGraded[s] * 100).toFixed(1) : null),
                     backgroundColor: colors.slice(0, serverTypes.length)
                 }]
             },

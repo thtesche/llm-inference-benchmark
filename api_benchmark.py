@@ -2,6 +2,7 @@ import json
 import time
 import asyncio
 import argparse
+import os
 import re
 from openai import AsyncOpenAI
 from archive import save_run, get_last_server_type
@@ -26,10 +27,10 @@ USER_PROMPT_SUFFIX = (
 
 
 def parse_answer_from_boxed(answer_text):
-    """Extracts the value from \\boxed{...} from the answer."""
-    match = re.search(r'\\boxed\{([^}]+)\}', answer_text)
-    if match:
-        return match.group(1).strip()
+    """Extracts the last \\boxed{...} value from the answer."""
+    matches = re.findall(r'\\boxed\{([^}]+)\}', answer_text)
+    if matches:
+        return matches[-1].strip()
     return None
 
 
@@ -38,15 +39,15 @@ def extract_answer(answer_text):
     if not answer_text:
         return None
 
-    # Strategy 1: \\boxed{...}
-    match = re.search(r'\\boxed\{([^}]+)\}', answer_text)
-    if match:
-        return match.group(1).strip()
+    # Strategy 1: last \\boxed{...} (earlier ones may be quoted placeholders)
+    matches = re.findall(r'\\boxed\{([^}]+)\}', answer_text)
+    if matches:
+        return matches[-1].strip()
 
-    # Strategy 2: candidate_answer=N
-    match = re.search(r'candidate_answer\s*=\s*(\d+)', answer_text, re.IGNORECASE)
-    if match:
-        return match.group(1).strip()
+    # Strategy 2: last candidate_answer=N
+    matches = re.findall(r'candidate_answer\s*=\s*(\d+)', answer_text, re.IGNORECASE)
+    if matches:
+        return matches[-1].strip()
 
     # Strategy 3: last number in text
     numbers = re.findall(r'\b(\d{1,4})\b', answer_text)
@@ -57,17 +58,26 @@ def extract_answer(answer_text):
 
 
 def compare_answers(extracted, expected):
-    """Compares the extracted answer with the expected answer."""
+    """Compares the extracted answer with the expected answer.
+
+    Returns (matched, status). `matched` is None when the task is not
+    auto-gradable (e.g. SWE tasks with a free-text expected answer).
+    """
     if extracted is None:
         return False, "WRONG"
-    
+
+    extracted_str = str(extracted).strip()
+
     try:
         expected_str = str(int(expected))
+        numeric = True
     except (ValueError, TypeError):
         expected_str = str(expected).strip()
-    
-    extracted_str = str(extracted).strip()
-    
+        numeric = False
+
+    if not numeric:
+        return None, "N/A"
+
     if extracted_str == expected_str:
         return True, "CORRECT"
     else:
@@ -92,6 +102,7 @@ def print_statistics(results):
         return
 
     correct = 0
+    graded = 0
     total = len(results)
     successful = [r for r in results if r.get("success")]
     successful_count = len(successful)
@@ -134,8 +145,10 @@ def print_statistics(results):
         
         if r.get("success"):
             matched, status = compare_answers(extracted, r.get("expected_answer", "N/A"))
-            if matched:
+            if matched is True:
                 correct += 1
+            if matched is not None:
+                graded += 1
             rec_val = str(extracted or '???')[:5]
         else:
             status = "FAILED"
@@ -159,8 +172,10 @@ def print_statistics(results):
     # --- Summary Section ---
     print("\n  " + "-"*136)
     print(f"  Total:  {total} tasks | {successful_count} successful | {failed} failed")
-    if successful_count > 0:
-        print(f"  Correct: {correct}/{successful_count} ({correct/successful_count*100:.1f}%)")
+    if graded > 0:
+        print(f"  Correct: {correct}/{graded} ({correct/graded*100:.1f}%)")
+    elif successful_count > 0:
+        print(f"  Correct: n/a ({successful_count} task(s) not auto-gradable - free-text expected answer)")
     else:
         print(f"  Correct: 0/0 (0.0%)")
     print()
@@ -213,7 +228,7 @@ def print_statistics(results):
 
 
 PROMPTS_FILE = "prompts/aime_2026.jsonl"
-SWE_PROMPTS_FILE = "prompts/swe_context_large.jsonl"  # ~100k tokens per context for realistic measurement
+SWE_PROMPTS_FILE = os.environ.get("SWE_PROMPTS_FILE", "prompts/swe_context_large.jsonl")  # ~100k tokens default
 DEBUG_HELLO = False
 BENCHMARK_MODE = "aime"  # "aime" for small or "swe" for large contexts
 
@@ -301,7 +316,6 @@ async def measure_request_streaming(client, model_name, prompt, request_id, inpu
             last_display_time = 0
             cumulative_prompt_tokens = 0
             cumulative_completion_tokens = 0
-            total_tokens_from_api = 0
             print(f"  [RETRY] Attempt {attempt}/{max_retries} after {((attempt - 1) * 2):.0f}s backoff...")
 
         try:
@@ -318,7 +332,6 @@ async def measure_request_streaming(client, model_name, prompt, request_id, inpu
             # Track token usage from API (actual counts, not heuristics)
             cumulative_prompt_tokens = 0
             cumulative_completion_tokens = 0
-            total_tokens_from_api = 0
 
             async for chunk in response:
                 chunk_count += 1
@@ -359,18 +372,17 @@ async def measure_request_streaming(client, model_name, prompt, request_id, inpu
                 if hasattr(chunk, 'usage') and chunk.usage:
                     cumulative_prompt_tokens = chunk.usage.prompt_tokens
                     cumulative_completion_tokens = chunk.usage.completion_tokens
-                    total_tokens_from_api = chunk.usage.total_tokens
 
                 # Real-time tokens/sec display
                 now = time.perf_counter()
                 if now - last_display_time >= display_interval:
                     # Use actual API token counts if available, otherwise fall back to heuristic
-                    if total_tokens_from_api > 0:
+                    if cumulative_completion_tokens > 0:
                         # Proportionally split based on text lengths
                         total_text_len = len(thinking_text) + len(answer_text)
                         if total_text_len > 0:
-                            think_tokens = int(total_tokens_from_api * len(thinking_text) / total_text_len)
-                            ans_tokens = total_tokens_from_api - think_tokens
+                            think_tokens = int(cumulative_completion_tokens * len(thinking_text) / total_text_len)
+                            ans_tokens = cumulative_completion_tokens - think_tokens
                         else:
                             think_tokens = 0
                             ans_tokens = 0
@@ -426,12 +438,12 @@ async def measure_request_streaming(client, model_name, prompt, request_id, inpu
             generation_time = end_time - first_token_time if first_token_time else 0
 
             # Use actual token counts from API, or fall back to heuristic
-            if total_tokens_from_api > 0:
+            if cumulative_completion_tokens > 0:
                 # Proportionally split based on text lengths
                 total_text_len = len(thinking_text) + len(answer_text)
                 if total_text_len > 0:
-                    reasoning_tokens = int(total_tokens_from_api * len(thinking_text) / total_text_len)
-                    answer_tokens = total_tokens_from_api - reasoning_tokens
+                    reasoning_tokens = int(cumulative_completion_tokens * len(thinking_text) / total_text_len)
+                    answer_tokens = cumulative_completion_tokens - reasoning_tokens
                 else:
                     reasoning_tokens = 0
                     answer_tokens = 0
@@ -443,6 +455,10 @@ async def measure_request_streaming(client, model_name, prompt, request_id, inpu
             tps = (total_tokens / generation_time) if total_tokens > 0 and generation_time > 0 else 0
             thinking_ratio = (reasoning_duration / total_latency * 100) if total_latency > 0 else 0
             
+            # Prefer server-reported prompt tokens (exact) over local estimate for input size
+            if cumulative_prompt_tokens > 0:
+                input_context_tokens = cumulative_prompt_tokens
+
             # Prefill metrics: Like Strata's PREFILL T/S (input context processing)
             # Prefill phase = time until answer generation starts (reasoning_duration)
             prefill_duration = reasoning_duration if reasoning_duration > 0 else ttft
@@ -518,11 +534,11 @@ async def measure_request_streaming(client, model_name, prompt, request_id, inpu
             generation_time = end_time - partial_first_token if partial_first_token else 0
 
             # Use actual token counts from API, or fall back to heuristic
-            if total_tokens_from_api > 0:
+            if cumulative_completion_tokens > 0:
                 total_text_len = len(partial_thinking_text) + len(partial_answer_text)
                 if total_text_len > 0:
-                    reasoning_tokens = int(total_tokens_from_api * len(partial_thinking_text) / total_text_len)
-                    answer_tokens = total_tokens_from_api - reasoning_tokens
+                    reasoning_tokens = int(cumulative_completion_tokens * len(partial_thinking_text) / total_text_len)
+                    answer_tokens = cumulative_completion_tokens - reasoning_tokens
                 else:
                     reasoning_tokens = 0
                     answer_tokens = 0
@@ -534,6 +550,9 @@ async def measure_request_streaming(client, model_name, prompt, request_id, inpu
             tps = (total_tokens / generation_time) if total_tokens > 0 and generation_time > 0 else 0
             thinking_ratio = (reasoning_duration / total_latency * 100) if total_latency > 0 else 0
             
+            if cumulative_prompt_tokens > 0:
+                input_context_tokens = cumulative_prompt_tokens
+
             # Prefill metrics: Like Strata (input context processing)
             prefill_duration = reasoning_duration if reasoning_duration > 0 else ttft
             prefill_tps = (input_context_tokens / prefill_duration) if prefill_duration > 0 and input_context_tokens > 0 else 0

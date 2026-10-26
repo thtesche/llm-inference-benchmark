@@ -13,7 +13,9 @@
                 <th>Server Type</th>
                 <th>Model</th>
                 <th>Accuracy</th>
-                <th>Avg TPS</th>
+                <th>Context</th>
+                <th>Prefill TPS</th>
+                <th>Gen TPS</th>
                 <th>Correct</th>
                 <th>Notes</th>
                 <th>Actions</th>
@@ -27,11 +29,19 @@
                 <td><span class="badge">{{ run.server_type or 'unknown' }}</span></td>
                 <td>{{ run.model or 'unknown' }}</td>
                 <td>
-                    <strong>{{ "%.1f"|format(run.accuracy * 100) }}%</strong>
+                    {% if run.accuracy is not none %}
+                        <strong>{{ "%.1f"|format(run.accuracy * 100) }}%</strong>
+                    {% else %}<span class="oc-muted">n/a</span>{% endif %}
                 </td>
-                <td>{{ "%.1f"|format(run.avg_tps) }}</td>
+                <td>
+                    {% if run.avg_context_tokens %}
+                        {{ "{:,}".format(run.avg_context_tokens) }}
+                    {% else %}—{% endif %}
+                </td>
+                <td>{{ "%.1f"|format(run.avg_prefill_tps) }}</td>
+                <td>{{ "%.1f"|format(run.avg_generation_tps) }}</td>
                 <td>{{ run.correct }}/{{ run.total }}</td>
-                <td>{{ run.notes[:50] or '-' }}</td>
+                <td title="{{ run.notes or '' }}">{{ (run.notes or '')[:60] or '-' }}</td>
                 <td>
                     <a href="/run/{{ run.id }}" class="button" style="padding: 6px 12px; font-size: 0.9em;">View</a>
                 </td>
@@ -45,23 +55,38 @@
     
     <h2>Quick Stats</h2>
     {% if runs %}
-    {% set best_accuracy = runs|map(attribute='accuracy')|max %}
+    {% set graded_runs = runs|selectattr('accuracy', 'ne', none)|list %}
+    {% set best_accuracy = graded_runs|map(attribute='accuracy')|max if graded_runs else none %}
     {% set best_tps = runs|map(attribute='avg_tps')|max %}
-    {% set avg_accuracy = runs|map(attribute='accuracy')|sum / runs|length %}
+    {% set avg_accuracy = (graded_runs|map(attribute='accuracy')|sum / graded_runs|length) if graded_runs else none %}
     
     <div class="stat-card">
         <div class="stat-label">Best Accuracy</div>
-        <div class="stat-value">{{ "%.1f"|format(best_accuracy * 100) }}%</div>
+        <div class="stat-value">
+            {% if best_accuracy is not none %}{{ "%.1f"|format(best_accuracy * 100) }}%{% else %}n/a{% endif %}
+        </div>
     </div>
     
     <div class="stat-card">
         <div class="stat-label">Best TPS</div>
         <div class="stat-value">{{ "%.1f"|format(best_tps) }}</div>
     </div>
+
+    <div class="stat-card">
+        <div class="stat-label">Best Prefill TPS</div>
+        <div class="stat-value">{{ "%.1f"|format(runs|map(attribute='avg_prefill_tps')|max) }}</div>
+    </div>
+
+    <div class="stat-card">
+        <div class="stat-label">Best Gen TPS</div>
+        <div class="stat-value">{{ "%.1f"|format(runs|map(attribute='avg_generation_tps')|max) }}</div>
+    </div>
     
     <div class="stat-card">
         <div class="stat-label">Avg Accuracy</div>
-        <div class="stat-value">{{ "%.1f"|format(avg_accuracy * 100) }}%</div>
+        <div class="stat-value">
+            {% if avg_accuracy is not none %}{{ "%.1f"|format(avg_accuracy * 100) }}%{% else %}n/a{% endif %}
+        </div>
     </div>
     
     <div class="stat-card">

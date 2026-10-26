@@ -27,6 +27,9 @@ def init_db():
             accuracy REAL,
             avg_ttft REAL,
             avg_tps REAL,
+            avg_prefill_tps REAL,
+            avg_generation_tps REAL,
+            avg_context_tokens INTEGER,
             total_correct INTEGER,
             total_problems INTEGER
         )
@@ -56,7 +59,27 @@ def init_db():
             FOREIGN KEY(run_id) REFERENCES runs(id)
         )
     """)
+
+    # Migrations: add new result columns to pre-existing databases
+    existing = {row[1] for row in cursor.execute("PRAGMA table_info(results)")}
+    for column, ctype in (
+        ("input_context_tokens", "INTEGER"),
+        ("prefill_tps", "REAL"),
+        ("generation_tps", "REAL"),
+    ):
+        if column not in existing:
+            cursor.execute(f"ALTER TABLE results ADD COLUMN {column} {ctype}")
     
+    # Migrations: add new run columns to pre-existing databases
+    existing = {row[1] for row in cursor.execute("PRAGMA table_info(runs)")}
+    for column, ctype in (
+        ("avg_prefill_tps", "REAL"),
+        ("avg_generation_tps", "REAL"),
+        ("avg_context_tokens", "INTEGER"),
+    ):
+        if column not in existing:
+            cursor.execute(f"ALTER TABLE runs ADD COLUMN {column} {ctype}")
+
     # Server type history for autocomplete
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS server_history (
@@ -67,6 +90,44 @@ def init_db():
     
     conn.commit()
     conn.close()
+
+def _extract_answer(text):
+    """Extract a final answer from model output (same strategies as the runner)."""
+    if not text:
+        return None
+    matches = re.findall(r'\\boxed\{([^}]+)\}', text)
+    if matches:
+        return matches[-1].strip()
+    matches = re.findall(r'candidate_answer\s*=\s*(\d+)', text, re.IGNORECASE)
+    if matches:
+        return matches[-1].strip()
+    numbers = re.findall(r'\b(\d{1,4})\b', text)
+    return numbers[-1] if numbers else None
+
+
+def _is_correct(result):
+    """Judge correctness from the result itself (never from 'an answer exists').
+
+    Returns True/False, or None when the task is not auto-gradable
+    (expected answer is free text, e.g. SWE tasks).
+    """
+    expected = result.get("expected_answer")
+    if expected is not None:
+        try:
+            expected = str(int(expected))
+        except (ValueError, TypeError):
+            return None  # free-text expected answer: needs manual review
+    else:
+        return None
+
+    if "correct" in result and result["correct"] is not None:
+        return bool(result["correct"])
+
+    extracted = _extract_answer(result.get("answer", ""))
+    if extracted is None:
+        return False
+    return str(extracted).strip() == expected
+
 
 def save_run(results, server_type, model, api_url, notes):
     """Save benchmark run to database and backup as JSON.
@@ -89,23 +150,36 @@ def save_run(results, server_type, model, api_url, notes):
     
     # Calculate aggregates
     successful = [r for r in results if r.get("success")]
-    correct = sum(1 for r in successful if r.get("answer"))
-    accuracy = correct / len(successful) if successful else 0
-    
+    verdicts = [(r, _is_correct(r)) for r in successful]
+    graded = [ok for _, ok in verdicts if ok is not None]
+    correct = sum(1 for ok in graded if ok)
+    accuracy = (correct / len(graded)) if graded else None
+
     ttfts = [r["ttft"] for r in successful if "ttft" in r]
     avg_ttft = sum(ttfts) / len(ttfts) if ttfts else 0
-    
+
     tps_values = [r["tps"] for r in successful if r.get("tps", 0) > 0]
     avg_tps = sum(tps_values) / len(tps_values) if tps_values else 0
-    
+
+    prefill_values = [r["prefill_tps"] for r in successful if r.get("prefill_tps", 0) > 0]
+    avg_prefill_tps = sum(prefill_values) / len(prefill_values) if prefill_values else 0
+
+    generation_values = [r["generation_tps"] for r in successful if r.get("generation_tps", 0) > 0]
+    avg_generation_tps = sum(generation_values) / len(generation_values) if generation_values else 0
+
+    context_values = [r["input_context_tokens"] for r in successful if r.get("input_context_tokens", 0) > 0]
+    avg_context_tokens = int(sum(context_values) / len(context_values)) if context_values else 0
+
     total_problems = len(results)
-    
+
     # Insert run metadata
     cursor.execute("""
-        INSERT INTO runs 
-        (timestamp, server_type, model, api_url, notes, accuracy, avg_ttft, avg_tps, total_correct, total_problems)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    """, (timestamp, server_type, model, api_url, notes, accuracy, avg_ttft, avg_tps, correct, total_problems))
+        INSERT INTO runs
+        (timestamp, server_type, model, api_url, notes, accuracy, avg_ttft, avg_tps,
+         avg_prefill_tps, avg_generation_tps, avg_context_tokens, total_correct, total_problems)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """, (timestamp, server_type, model, api_url, notes, accuracy, avg_ttft, avg_tps,
+          avg_prefill_tps, avg_generation_tps, avg_context_tokens, correct, total_problems))
     
     run_id = cursor.lastrowid
     
@@ -122,7 +196,11 @@ def save_run(results, server_type, model, api_url, notes):
                 if match:
                     extracted = match.group(1).strip()
         
-        correct_flag = 1 if result.get("success") and extracted else 0
+        if not extracted:
+            extracted = _extract_answer(result.get("answer", "")) or ""
+
+        verdict = _is_correct(result) if result.get("success") else False
+        correct_flag = None if verdict is None else (1 if verdict else 0)
         
         cursor.execute("""
             INSERT INTO results
@@ -216,7 +294,8 @@ def list_runs(limit=10, server_type_filter=None):
     
     if server_type_filter:
         cursor.execute("""
-            SELECT id, timestamp, server_type, model, accuracy, avg_tps, total_correct, total_problems, notes
+            SELECT id, timestamp, server_type, model, accuracy, avg_tps, total_correct, total_problems, notes,
+                   avg_prefill_tps, avg_generation_tps, avg_context_tokens, avg_ttft
             FROM runs
             WHERE server_type = ?
             ORDER BY timestamp DESC
@@ -224,7 +303,8 @@ def list_runs(limit=10, server_type_filter=None):
         """, (server_type_filter, limit))
     else:
         cursor.execute("""
-            SELECT id, timestamp, server_type, model, accuracy, avg_tps, total_correct, total_problems, notes
+            SELECT id, timestamp, server_type, model, accuracy, avg_tps, total_correct, total_problems, notes,
+                   avg_prefill_tps, avg_generation_tps, avg_context_tokens, avg_ttft
             FROM runs
             ORDER BY timestamp DESC
             LIMIT ?
@@ -244,7 +324,11 @@ def list_runs(limit=10, server_type_filter=None):
             "avg_tps": run[5],
             "correct": run[6],
             "total": run[7],
-            "notes": run[8]
+            "notes": run[8],
+            "avg_prefill_tps": run[9] or 0,
+            "avg_generation_tps": run[10] or 0,
+            "avg_context_tokens": run[11] or 0,
+            "avg_ttft": run[12] or 0
         })
     
     return result
@@ -257,7 +341,8 @@ def get_run(run_id):
     
     # Get run metadata
     cursor.execute("""
-        SELECT id, timestamp, server_type, model, api_url, notes, accuracy, avg_ttft, avg_tps, total_correct, total_problems
+        SELECT id, timestamp, server_type, model, api_url, notes, accuracy, avg_ttft, avg_tps, total_correct, total_problems,
+               avg_prefill_tps, avg_generation_tps, avg_context_tokens
         FROM runs
         WHERE id = ?
     """, (run_id,))
@@ -291,6 +376,9 @@ def get_run(run_id):
         "avg_tps": run[8],
         "total_correct": run[9],
         "total_problems": run[10],
+        "avg_prefill_tps": run[11] or 0,
+        "avg_generation_tps": run[12] or 0,
+        "avg_context_tokens": run[13] or 0,
         "results": []
     }
     
@@ -300,7 +388,7 @@ def get_run(run_id):
             "position": result[1],
             "expected": result[2],
             "extracted": result[3],
-            "correct": bool(result[4]),
+            "correct": None if result[4] is None else bool(result[4]),
             "ttft": result[5],
             "reasoning_time": result[6],
             "answer_time": result[7],
@@ -332,7 +420,10 @@ def compare_runs(run_id_1, run_id_2):
             "model": run1["model"],
             "accuracy": run1["accuracy"],
             "avg_ttft": run1["avg_ttft"],
-            "avg_tps": run1["avg_tps"]
+            "avg_tps": run1["avg_tps"],
+            "avg_prefill_tps": run1["avg_prefill_tps"],
+            "avg_generation_tps": run1["avg_generation_tps"],
+            "avg_context_tokens": run1["avg_context_tokens"]
         },
         "run_2": {
             "id": run2["id"],
@@ -341,10 +432,17 @@ def compare_runs(run_id_1, run_id_2):
             "model": run2["model"],
             "accuracy": run2["accuracy"],
             "avg_ttft": run2["avg_ttft"],
-            "avg_tps": run2["avg_tps"]
+            "avg_tps": run2["avg_tps"],
+            "avg_prefill_tps": run2["avg_prefill_tps"],
+            "avg_generation_tps": run2["avg_generation_tps"],
+            "avg_context_tokens": run2["avg_context_tokens"]
         },
         "differences": {
-            "accuracy_delta": run2["accuracy"] - run1["accuracy"],
+            "accuracy_delta": (
+                run2["accuracy"] - run1["accuracy"]
+                if run1["accuracy"] is not None and run2["accuracy"] is not None
+                else None
+            ),
             "ttft_delta": run2["avg_ttft"] - run1["avg_ttft"],
             "tps_delta": run2["avg_tps"] - run1["avg_tps"],
         },
